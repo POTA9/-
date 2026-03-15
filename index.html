@@ -1020,7 +1020,6 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
 </head>
 <body>
     <div class="app">
@@ -1113,12 +1112,8 @@
 
             // Initialize Firebase
             firebase.initializeApp(firebaseConfig);
-            // Анонимная аутентификация
-
             const db = firebase.database();
-firebase.auth().signInAnonymously().catch(error => {
-    console.error('Ошибка анонимной аутентификации:', error);
-});
+
             // State
             let rooms = new Map();
             let currentRoomId = null;
@@ -2253,13 +2248,6 @@ function setupRoomPresence(roomId) {
                     addRoomToUI(roomId, keyBase64, roomName || `Чат ${roomId}`, 'Создано', Date.now());
                     
                     await db.ref(`rooms/${roomId}/messages`).set({});
-
-  await db.ref(`secrets/${roomId}`).set({
-            created: Date.now(),
-            createdBy: userId
-        });
-        
-
                     await switchRoom(roomId);
                     
                     // Copy key to clipboard
