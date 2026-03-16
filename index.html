@@ -880,8 +880,13 @@
             }
 
             .encryption-badge {
-                display: none;
-            }
+    display: inline-block;
+}
+@media (max-width: 480px) {
+    .encryption-badge:last-child {
+        display: none;
+    }
+}
 
             .delete-message-btn {
                 width: 28px;
