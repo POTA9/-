@@ -1200,7 +1200,11 @@
     padding: 6px 10px;
     margin-bottom: 8px;
     font-size: 0.85rem;
+    max-width: 100%; /* Ограничиваем ширину родителем */
+    width: 100%;
+    box-sizing: border-box;
 }
+
 
 .reply-quote .reply-quote-author {
     color: var(--accent);
@@ -1216,8 +1220,27 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
+}
+.message {
+    padding: 12px 16px;
+    border-radius: 24px;
+    word-break: break-word;
+    line-height: 1.5;
+    position: relative;
+    font-size: 1rem;
+    max-width: 100%; /* Важно! */
+    width: 100%;
+    box-sizing: border-box;
 }
 
+/* Для мобильных */
+@media (max-width: 768px) {
+    .message {
+        max-width: 85%;
+        width: 85%;
+    }
+}
 @keyframes slideDown {
     from {
         opacity: 0;
