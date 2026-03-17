@@ -548,6 +548,54 @@
             gap: 4px;
         }
 
+        /* Стили для индикатора пользователя */
+.user-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    min-width: 10px;
+    margin-right: 6px;
+    margin-bottom: 4px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.message-wrapper.own .user-indicator {
+    display: none; /* Не показываем индикатор для своих сообщений */
+}
+
+.message-content {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 70%;
+}
+
+/* Для мобильных устройств */
+@media (max-width: 768px) {
+    .user-indicator {
+        width: 8px;
+        height: 8px;
+        min-width: 8px;
+    }
+}
+
+/* Анимация появления индикатора */
+.user-indicator {
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
         /* Кнопка удаления */
         .delete-message-btn {
             background: rgba(255, 255, 255, 0.1);
@@ -1300,6 +1348,47 @@
                 return userId;
             }
 
+
+
+            // Добавьте эту функцию в начало скрипта (после генерации userId)
+function getUserColor(userId) {
+    // Используем userId для генерации стабильного цвета
+    let hash = 0;
+    for (let i = 0; i < userId.length; i++) {
+        hash = ((hash << 5) - hash) + userId.charCodeAt(i);
+        hash = hash & hash;
+    }
+    
+    // Список ярких, хорошо различимых цветов
+    const colors = [
+        '#FF6B6B', // красный
+        '#4AE9A0', // зеленый
+        '#5D4EF0', // фиолетовый
+        '#FFAA00', // оранжевый
+        '#FF8C8C', // светло-красный
+        '#6B5BFF', // синий
+        '#FF69B4', // розовый
+        '#00D68F', // бирюзовый
+        '#FFB347', // желто-оранжевый
+        '#A35CFF', // лавандовый
+        '#FF7F50', // коралловый
+        '#20B2AA', // светло-морской
+        '#9370DB', // средне-фиолетовый
+        '#FFA07A', // светло-лососевый
+        '#3CB371', // морской зеленый
+        '#FF6347', // томатный
+        '#BA55D3', // средне-орхидейный
+        '#40E0D0', // бирюзовый
+        '#FFD700', // золотой
+        '#98FB98'  // бледно-зеленый
+    ];
+    
+    // Берем абсолютное значение хеша и получаем индекс
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+}
+
+
             // Generate avatar color based on room name
             function getAvatarColor(name) {
                 if (!name) return Math.floor(Math.random() * 10);
@@ -1874,41 +1963,41 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
                 }
             }
 
-            // Load messages
-            async function loadMessages(roomId, key) {
-                try {
-                    const snapshot = await db.ref(`rooms/${roomId}/messages`).once('value');
-                    
-                    if (!snapshot || !snapshot.exists()) return;
+async function loadMessages(roomId, key) {
+    try {
+        const snapshot = await db.ref(`rooms/${roomId}/messages`).once('value');
+        
+        if (!snapshot || !snapshot.exists()) return;
 
-                    const messagesArray = [];
-                    snapshot.forEach((childSnapshot) => {
-                        const msg = childSnapshot.val();
-                        if (msg && msg.data) {
-                            messagesArray.push({
-                                id: childSnapshot.key,
-                                ...msg
-                            });
-                        }
-                    });
-                    
-                    messagesArray.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-                    for (const msg of messagesArray) {
-                        if (msg.deleted) {
-                            // Не показываем удаленные сообщения
-                            continue;
-                        } else {
-                            const decrypted = await decryptMessage(msg.data, key);
-                            const isOwn = msg.from === userId;
-                            // Передаем статус delivered из Firebase
-                            addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, msg.id);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error loading messages:', error);
-                }
+        const messagesArray = [];
+        snapshot.forEach((childSnapshot) => {
+            const msg = childSnapshot.val();
+            if (msg && msg.data) {
+                messagesArray.push({
+                    id: childSnapshot.key,
+                    ...msg
+                });
             }
+        });
+        
+        messagesArray.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+        for (const msg of messagesArray) {
+            if (msg.deleted) {
+                // Не показываем удаленные сообщения
+                continue;
+            } else {
+                const decrypted = await decryptMessage(msg.data, key);
+                const isOwn = msg.from === userId;
+                // Передаем from для чужих сообщений
+                addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, msg.id, msg.from);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading messages:', error);
+    }
+}
+
 
 function setupMessagesListener(roomId, key) {
     messagesRef = db.ref(`rooms/${roomId}/messages`);
@@ -1929,7 +2018,7 @@ function setupMessagesListener(roomId, key) {
         
         const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
         if (!existingMessage) {
-            addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key);
+            addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from);
             
             // Если это чужое сообщение и мы онлайн - немедленно помечаем как доставленное
             if (!isOwn && !msg.delivered) {
@@ -1990,75 +2079,82 @@ function setupMessagesListener(roomId, key) {
     });
 }
 
-            // Add message to UI
-            function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId = null) {
-                const wrapper = document.createElement('div');
-                wrapper.className = `message-wrapper ${isOwn ? 'own' : 'other'}`;
-                
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'message-content';
-                
-                const msgEl = document.createElement('div');
-                msgEl.className = `message ${isOwn ? 'own' : 'other'}`;
-                msgEl.textContent = text;
-                if (messageId) {
-                    msgEl.dataset.messageId = messageId;
-                }
-                
-                const timeEl = document.createElement('div');
-                timeEl.className = 'message-time';
-                
-                const timeText = new Date(timestamp).toLocaleString([], { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    day: 'numeric',
-    month: 'numeric'
-});
-                
-                timeEl.textContent = timeText;
-                
-                // Добавляем индикатор статуса доставки только для своих сообщений
-                if (isOwn) {
-                    const statusSpan = document.createElement('span');
-                    statusSpan.className = 'delivery-status-badge';
-                    
-                    if (isDelivered) {
-                        statusSpan.innerHTML = ' <i class="fas fa-check-circle delivered" title="Доставлено"></i>';
-                    } else {
-                        statusSpan.innerHTML = ' <i class="fas fa-clock pending" title="Ожидает доставки"></i>';
-                    }
-                    
-                    timeEl.appendChild(statusSpan);
-                }
-                
-                msgEl.appendChild(timeEl);
-                contentDiv.appendChild(msgEl);
-                
-                // Add delete button for own messages
-                if (isOwn && messageId) {
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.className = 'delete-message-btn';
-                    deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-                    deleteBtn.title = 'Удалить сообщение';
-                    
-                    deleteBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showConfirm(
-                            'Удалить сообщение?',
-                            'Вы уверены, что хотите удалить это сообщение для всех?',
-                            () => deleteMessage(messageId)
-                        );
-                    });
-                    
-                    contentDiv.appendChild(deleteBtn);
-                }
-                
-                wrapper.appendChild(contentDiv);
-                
-                messagesContainer.appendChild(wrapper);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-
+function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId = null, messageFrom = null) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `message-wrapper ${isOwn ? 'own' : 'other'}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    
+    // Для чужих сообщений добавляем цветной индикатор пользователя
+    if (!isOwn && messageFrom) {
+        const userIndicator = document.createElement('div');
+        userIndicator.className = 'user-indicator';
+        userIndicator.style.backgroundColor = getUserColor(messageFrom);
+        userIndicator.title = `Пользователь: ${messageFrom.substring(0, 8)}...`;
+        contentDiv.appendChild(userIndicator);
+    }
+    
+    const msgEl = document.createElement('div');
+    msgEl.className = `message ${isOwn ? 'own' : 'other'}`;
+    msgEl.textContent = text;
+    if (messageId) {
+        msgEl.dataset.messageId = messageId;
+    }
+    
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    
+    const timeText = new Date(timestamp).toLocaleString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        day: 'numeric',
+        month: 'numeric'
+    });
+    
+    timeEl.textContent = timeText;
+    
+    // Добавляем индикатор статуса доставки только для своих сообщений
+    if (isOwn) {
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'delivery-status-badge';
+        
+        if (isDelivered) {
+            statusSpan.innerHTML = ' <i class="fas fa-check-circle delivered" title="Доставлено"></i>';
+        } else {
+            statusSpan.innerHTML = ' <i class="fas fa-clock pending" title="Ожидает доставки"></i>';
+        }
+        
+        timeEl.appendChild(statusSpan);
+    }
+    
+    msgEl.appendChild(timeEl);
+    contentDiv.appendChild(msgEl);
+    
+    // Add delete button for own messages
+    if (isOwn && messageId) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-message-btn';
+        deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        deleteBtn.title = 'Удалить сообщение';
+        
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showConfirm(
+                'Удалить сообщение?',
+                'Вы уверены, что хотите удалить это сообщение для всех?',
+                () => deleteMessage(messageId)
+            );
+        });
+        
+        contentDiv.appendChild(deleteBtn);
+    }
+    
+    wrapper.appendChild(contentDiv);
+    
+    messagesContainer.appendChild(wrapper);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
 // Функция отправки сообщения с полем delivered
 async function sendMessage(text) {
     if (!currentRoomId || !cryptoKey || !text.trim()) return;
