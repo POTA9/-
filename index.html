@@ -1096,6 +1096,7 @@
 }
 
 /* Панель ответа (цитируемое сообщение) */
+/* Улучшенные стили для панели ответа */
 .reply-panel {
     background: var(--bg-tertiary);
     border-left: 4px solid var(--accent);
@@ -1107,6 +1108,43 @@
     justify-content: space-between;
     font-size: 0.9rem;
     animation: slideDown 0.2s ease;
+    width: 100%;
+}
+
+.input-area {
+    flex-direction: column;
+    height: auto;
+    min-height: var(--input-area-height);
+    padding: 12px 20px;
+}
+
+.input-area > div {
+    width: 100%;
+}
+
+/* Для мобильных устройств */
+@media (max-width: 768px) {
+    .input-area {
+        padding: 10px 16px;
+    }
+    
+    .reply-panel {
+        padding: 6px 12px;
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .input-area {
+        padding: 8px 12px;
+    }
+    
+    .reply-panel {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+        margin-bottom: 5px;
+    }
 }
 
 .reply-panel-content {
@@ -1274,29 +1312,28 @@
             </div>
 
             <div class="input-area" id="inputArea" style="display: none;">
-
-
-    <!-- Панель ответа (скрыта по умолчанию) -->
-    <div id="replyPanel" class="reply-panel" style="display: none;">
-        <div class="reply-panel-content">
-            <div class="reply-to" id="replyToInfo">
-                <i class="fas fa-reply"></i> Ответ для <span id="replyAuthorName">пользователя</span>
+                <!-- Панель ответа (теперь над полем ввода) -->
+                <div id="replyPanel" class="reply-panel" style="display: none;">
+                    <div class="reply-panel-content">
+                        <div class="reply-to" id="replyToInfo">
+                            <i class="fas fa-reply"></i> Ответ для <span id="replyAuthorName">пользователя</span>
+                        </div>
+                        <div class="reply-text" id="replyTextPreview">
+                            <i class="fas fa-quote-right"></i> <span id="replyMessagePreview">Текст сообщения</span>
+                        </div>
+                    </div>
+                    <button class="close-reply-btn" id="closeReplyBtn" title="Отменить ответ">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div style="display: flex; width: 100%; gap: 12px;">
+                    <input type="text" id="messageInput" placeholder="Введите сообщение..." autocomplete="off">
+                    <button class="send-btn" id="sendMessageBtn">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
             </div>
-            <div class="reply-text" id="replyTextPreview">
-                <i class="fas fa-quote-right"></i> <span id="replyMessagePreview">Текст сообщения</span>
-            </div>
-        </div>
-        <button class="close-reply-btn" id="closeReplyBtn" title="Отменить ответ">
-            <i class="fas fa-times"></i>
-        </button>
-    </div>
-    
-    <input type="text" id="messageInput" placeholder="Введите сообщение..." autocomplete="off">
-    <button class="send-btn" id="sendMessageBtn">
-        <i class="fas fa-paper-plane"></i>
-    </button>
-            </div>
-        </div>
     </div>
 
     <div class="notification" id="statusMessage"></div>
