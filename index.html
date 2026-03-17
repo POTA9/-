@@ -1924,7 +1924,7 @@ async function markMessagesAsDelivered(roomId) {
     if (!roomId) return;
     
     try {
-        console.log(`🔍 Проверка сообщений для доставки в комнате ${roomId}`);
+       
         
         const presenceSnap = await db.ref(`rooms/${roomId}/presence`).once('value');
         
@@ -1941,10 +1941,10 @@ async function markMessagesAsDelivered(roomId) {
             });
         }
         
-        console.log(`👥 Онлайн пользователи в комнате ${roomId}:`, Array.from(onlineUserIds));
+       
         
         if (!anyoneOnline) {
-            console.log(`📭 Нет никого онлайн в комнате, сообщения не помечаем`);
+            
             return;
         }
         
@@ -1963,13 +1963,13 @@ async function markMessagesAsDelivered(roomId) {
                     updates[`rooms/${roomId}/messages/${messageId}/delivered`] = true;
                     hasUpdates = true;
                     markedCount++;
-                    console.log(`📬 Помечаем сообщение ${messageId} от ${msg.from}`);
+                  
                 }
             });
             
             if (hasUpdates) {
                 await db.ref().update(updates);
-                console.log(`✅ Помечены как доставленные ${markedCount} сообщений в комнате ${roomId}`);
+                
                 
                 // Обновляем индикаторы после пометки сообщений
                 updateRoomMessageIndicators(roomId);
@@ -1979,7 +1979,7 @@ async function markMessagesAsDelivered(roomId) {
                 }
                 
                 if (currentRoomId === roomId && cryptoKey) {
-                    console.log('🔄 Обновляем UI после пометки сообщений');
+                    
                     
                     const scrollPos = messagesContainer.scrollTop;
                     const scrollHeight = messagesContainer.scrollHeight;
@@ -2084,7 +2084,7 @@ async function sendMessage(text) {
         // Сообщение считается доставленным, только если есть другие онлайн пользователи
         const isDelivered = otherOnlineCount > 0;
         
-        console.log(`📤 Отправка сообщения: доставлено=${isDelivered}, других онлайн=${otherOnlineCount}`);
+       
         
         // Создаем объект сообщения
         const messageObj = {
@@ -2236,7 +2236,7 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
         try {
             // Удаляем присутствие из старой комнаты
             await db.ref(`rooms/${currentRoomId}/presence/${userId}`).remove();
-            console.log(`Удален из предыдущей комнаты ${currentRoomId}`);
+           
         } catch (error) {
             console.error('Error removing from previous room:', error);
         }
@@ -2342,7 +2342,7 @@ function setupMessagesListener(roomId, key) {
             
             // Если это чужое сообщение и мы онлайн - немедленно помечаем как доставленное
             if (!isOwn && !msg.delivered) {
-                console.log('📨 Новое чужое сообщение, помечаем как доставленное');
+                
                 const updates = {};
                 updates[`rooms/${roomId}/messages/${snapshot.key}/delivered`] = true;
                 await db.ref().update(updates);
@@ -2379,7 +2379,7 @@ function setupMessagesListener(roomId, key) {
                 const statusBadge = messageElement.querySelector('.delivery-status-badge');
                 if (statusBadge) {
                     statusBadge.innerHTML = ' <i class="fas fa-check-circle delivered" title="Доставлено"></i>';
-                    console.log(`✅ Обновлен статус сообщения ${snapshot.key} на доставлено`);
+                   
                 }
             }
         }
@@ -2555,7 +2555,7 @@ async function sendMessage(text) {
         // Сообщение считается доставленным, только если есть другие онлайн пользователи
         const isDelivered = otherOnlineCount > 0;
         
-        console.log(`📤 Отправка сообщения: доставлено=${isDelivered}, других онлайн=${otherOnlineCount}`);
+        
         
         // Создаем объект сообщения
         const messageObj = {
@@ -2676,14 +2676,14 @@ function setupRoomPresence(roomId) {
                 
                 const onlineCount = allUsers.length;
                 
-                console.log(`👥 Комната ${roomId}: ${onlineCount} всего онлайн`);
+               
                 
                 // Обновляем статус для этой комнаты
                 onlineStatusInRooms.set(roomId, onlineCount > 0);
                 
                 // ВАЖНО: Если есть хоть кто-то онлайн (включая нас самих)
                 if (onlineCount > 0) {
-                    console.log('🎯 Есть пользователи в комнате, проверяем сообщения на доставку');
+                    
                     
                     // Помечаем сообщения как доставленные
                     await markMessagesAsDelivered(roomId);
@@ -2711,7 +2711,7 @@ function setupRoomPresence(roomId) {
                         .catch(error => console.error('Error updating global presence:', error));
                 }
             } else {
-                console.log(`👻 Никого нет в комнате ${roomId}`);
+               
                 roomOnlineCount.textContent = '0';
                 onlineStatusInRooms.set(roomId, false);
                 peerStatus.innerHTML = '<i class="fas fa-circle"></i> не в сети';
@@ -2832,12 +2832,12 @@ async function initialize() {
         // 1. Никогда не было очистки
         // 2. Прошло больше 24 часов с последней очистки
         if (!lastGlobalCleanup || now - parseInt(lastGlobalCleanup) > 86400000) { // 24 часа
-            console.log('🕐 Запуск плановой глобальной очистки (раз в 24 часа)');
+           
             await globalCleanupBySize(900); // 900 МБ лимит
             localStorage.setItem('global_cleanup_900mb', now.toString());
         } else {
             const hoursLeft = Math.round((86400000 - (now - parseInt(lastGlobalCleanup))) / 3600000);
-            console.log(`⏳ Следующая очистка через ${hoursLeft} часов`);
+            
         }
         // ===================================================
         
@@ -2884,7 +2884,7 @@ document.addEventListener('mousedown', (e) => {
     if (window.innerWidth <= 768) {
         if (e.target.closest('.sidebar') || e.target.closest('.sidebar-overlay')) {
             e.stopPropagation();
-            console.log('Блокируем закрытие');
+           
         }
     }
 }, true);
@@ -2893,7 +2893,7 @@ document.addEventListener('touchstart', (e) => {
     if (window.innerWidth <= 768) {
         if (e.target.closest('.sidebar') || e.target.closest('.sidebar-overlay')) {
             e.stopPropagation();
-            console.log('Блокируем закрытие');
+            
         }
     }
 }, true);
