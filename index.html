@@ -1846,6 +1846,105 @@ async function globalCleanupBySize(maxSizeMB = 900) {
         console.error('Ошибка глобальной очистки:', error);
     }
 }
+
+
+// ========== ОЧИСТКА ДЛЯ КАЖДОЙ КОМНАТЫ ПО РАЗМЕРУ (ЛИМИТ 50 МБ) ==========
+async function roomCleanupBySize(roomId, maxSizeMB = 50) {
+    try {
+        const maxSizeBytes = maxSizeMB * 1024 * 1024; // 50 МБ в байтах
+        
+        // Получаем все сообщения комнаты
+        const messagesSnapshot = await db.ref(`rooms/${roomId}/messages`).once('value');
+        
+        if (!messagesSnapshot.exists()) {
+            console.log(`📭 Комната ${roomId} не содержит сообщений`);
+            return;
+        }
+        
+        // Собираем все сообщения комнаты с их размерами
+        const messages = [];
+        let totalSize = 0;
+        
+        messagesSnapshot.forEach((msgSnapshot) => {
+            const msg = msgSnapshot.val();
+            const size = getMessageSizeInBytes(msg);
+            
+            messages.push({
+                key: msgSnapshot.key,
+                timestamp: msg.ts || 0,
+                size: size,
+                msg: msg
+            });
+            
+            totalSize += size;
+        });
+        
+        const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2);
+        console.log(`📊 Комната ${roomId}: ${messages.length} сообщений, ${totalSizeMB} МБ из ${maxSizeMB} МБ`);
+        
+        // Если превышен лимит комнаты
+        if (totalSize > maxSizeBytes) {
+            // Сортируем сообщения по времени (от старых к новым)
+            messages.sort((a, b) => a.timestamp - b.timestamp);
+            
+            const updates = {};
+            let sizeToRemove = totalSize - maxSizeBytes;
+            let removedSize = 0;
+            let removedCount = 0;
+            
+            console.log(`⚠️ Комната ${roomId}: превышение на ${(sizeToRemove/1024/1024).toFixed(2)} МБ. Удаляем старые сообщения...`);
+            
+            // Удаляем самые старые сообщения, пока не достигнем лимита
+            for (const msg of messages) {
+                if (removedSize >= sizeToRemove) break;
+                
+                updates[`rooms/${roomId}/messages/${msg.key}`] = null;
+                removedSize += msg.size;
+                removedCount++;
+            }
+            
+            if (removedCount > 0) {
+                await db.ref().update(updates);
+                const removedSizeMB = (removedSize/1024/1024).toFixed(2);
+                const newTotalMB = ((totalSize - removedSize)/1024/1024).toFixed(2);
+                
+                console.log(`🧹 Комната ${roomId}: удалено ${removedCount} старых сообщений (${removedSizeMB} МБ)`);
+                console.log(`📈 Теперь в комнате ${roomId}: ${newTotalMB} МБ`);
+                
+                // Показываем уведомление пользователю только для текущей комнаты
+                if (currentRoomId === roomId && typeof showStatus === 'function') {
+                    showStatus(`🧹 Комната: ${removedSizeMB} МБ очищено (${removedCount} сообщ.)`);
+                }
+            }
+        } else {
+            console.log(`✅ Комната ${roomId}: лимит не превышен (${totalSizeMB} МБ из ${maxSizeMB} МБ)`);
+        }
+    } catch (error) {
+        console.error(`❌ Ошибка очистки комнаты ${roomId}:`, error);
+    }
+}
+
+// ========== ПРОВЕРКА ВСЕХ КОМНАТ НА ПРЕВЫШЕНИЕ ЛИМИТА 50 МБ ==========
+async function checkAllRoomsSize() {
+    try {
+        const roomsSnapshot = await db.ref('rooms').once('value');
+        
+        if (!roomsSnapshot.exists()) {
+            console.log('Нет комнат для проверки');
+            return;
+        }
+        
+        const savedRooms = loadSavedRooms();
+        
+        // Проверяем только комнаты, сохраненные у пользователя
+        for (const roomId of Object.keys(savedRooms)) {
+            await roomCleanupBySize(roomId, 50);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка проверки комнат:', error);
+    }
+}
             // Save/load rooms
             function saveRoom(roomId, keyBase64, name) {
                 const saved = JSON.parse(localStorage.getItem('e2ee_rooms') || '{}');
@@ -2106,11 +2205,7 @@ async function sendMessage(text) {
         const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
         
         if (navigator.onLine) {
-            if (isDelivered) {
-                showStatus('✅ Сообщение доставлено');
-            } else {
-                showStatus('📤 Сообщение отправлено (ожидает доставки)');
-            }
+
         } else {
             showStatus('📦 Сообщение сохранено и будет доставлено при подключении');
         }
@@ -2119,7 +2214,14 @@ async function sendMessage(text) {
         
         // Отменяем ответ после отправки
         cancelReply();
+                const messageCount = parseInt(localStorage.getItem(`msg_count_${currentRoomId}`) || '0') + 1;
+        localStorage.setItem(`msg_count_${currentRoomId}`, messageCount.toString());
         
+        if (messageCount % 10 === 0) {
+            console.log(`📊 Проверка размера комнаты ${currentRoomId} (после ${messageCount} сообщений)`);
+            await roomCleanupBySize(currentRoomId, 50);
+        }
+       
     } catch (error) {
         console.error('Send error:', error);
         showStatus('Ошибка отправки', true);
@@ -2281,6 +2383,7 @@ cancelReply();
                     saved[roomId].lastAccessed = Date.now();
                     localStorage.setItem('e2ee_rooms', JSON.stringify(saved));
                 }
+                
             }
 
 async function loadMessages(roomId, key) {
@@ -2577,11 +2680,7 @@ async function sendMessage(text) {
         const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
         
         if (navigator.onLine) {
-            if (isDelivered) {
-                showStatus('✅ Сообщение доставлено');
-            } else {
-                showStatus('📤 Сообщение отправлено (ожидает доставки)');
-            }
+
         } else {
             showStatus('📦 Сообщение сохранено и будет доставлено при подключении');
         }
@@ -2840,7 +2939,13 @@ async function initialize() {
             
         }
         // ===================================================
+                const lastRoomsCleanup = localStorage.getItem('rooms_cleanup_50mb');
         
+        if (!lastRoomsCleanup || now - parseInt(lastRoomsCleanup) > 3600000) { // Каждый час
+            console.log('🔄 Запуск проверки комнат (лимит 50 МБ)...');
+            await checkAllRoomsSize();
+            localStorage.setItem('rooms_cleanup_50mb', now.toString());
+        }
         // Setup global presence
         if (typeof setupGlobalPresence === 'function') {
             setupGlobalPresence();
