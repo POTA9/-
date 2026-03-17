@@ -1069,6 +1069,141 @@
                 font-size: 16px !important;
             }
         }
+
+        /* Кнопка ответа */
+.reply-message-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.reply-message-btn:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+    transform: scale(1.1);
+}
+
+/* Панель ответа (цитируемое сообщение) */
+.reply-panel {
+    background: var(--bg-tertiary);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    padding: 8px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    animation: slideDown 0.2s ease;
+}
+
+.reply-panel-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.reply-panel-content .reply-to {
+    color: var(--accent);
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.reply-panel-content .reply-text {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reply-panel-content .reply-text i {
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.close-reply-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.close-reply-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+/* Цитируемое сообщение в самом сообщении */
+.reply-quote {
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+
+.reply-quote .reply-quote-author {
+    color: var(--accent);
+    font-size: 0.75rem;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.reply-quote .reply-quote-text {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Для мобильных */
+@media (max-width: 768px) {
+    .reply-message-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+    
+    .reply-panel {
+        padding: 6px 12px;
+        font-size: 0.85rem;
+    }
+}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -1139,10 +1274,27 @@
             </div>
 
             <div class="input-area" id="inputArea" style="display: none;">
-                <input type="text" id="messageInput" placeholder="Введите сообщение..." autocomplete="off">
-                <button class="send-btn" id="sendMessageBtn">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
+
+
+    <!-- Панель ответа (скрыта по умолчанию) -->
+    <div id="replyPanel" class="reply-panel" style="display: none;">
+        <div class="reply-panel-content">
+            <div class="reply-to" id="replyToInfo">
+                <i class="fas fa-reply"></i> Ответ для <span id="replyAuthorName">пользователя</span>
+            </div>
+            <div class="reply-text" id="replyTextPreview">
+                <i class="fas fa-quote-right"></i> <span id="replyMessagePreview">Текст сообщения</span>
+            </div>
+        </div>
+        <button class="close-reply-btn" id="closeReplyBtn" title="Отменить ответ">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+    
+    <input type="text" id="messageInput" placeholder="Введите сообщение..." autocomplete="off">
+    <button class="send-btn" id="sendMessageBtn">
+        <i class="fas fa-paper-plane"></i>
+    </button>
             </div>
         </div>
     </div>
@@ -1180,7 +1332,14 @@
             let globalPresenceRef = null;
             let myGlobalPresenceRef = null;
             let userId = generateUserId();
-            
+// Состояние для ответа на сообщение
+let replyToMessage = null; // { id, text, from, authorName }
+
+// DOM элементы для ответа
+const replyPanel = document.getElementById('replyPanel');
+const replyAuthorName = document.getElementById('replyAuthorName');
+const replyMessagePreview = document.getElementById('replyMessagePreview');
+const closeReplyBtn = document.getElementById('closeReplyBtn');
             // Статус онлайн для каждой комнаты
             let onlineStatusInRooms = new Map();
 
@@ -1806,6 +1965,106 @@ setInterval(() => {
                 }
             }
 
+
+
+            
+// Функция для установки ответа на сообщение
+function setReplyTo(messageId, messageText, messageFrom) {
+    const isOwn = messageFrom === userId;
+    let authorText;
+    if (isOwn) {
+        authorText = 'себя';
+    } else {
+        authorText = 'пользователя';
+    }
+    
+    replyToMessage = {
+        id: messageId,
+        text: messageText.substring(0, 50) + (messageText.length > 50 ? '...' : ''),
+        from: messageFrom,
+        authorName: authorText
+    };
+    
+    // Обновляем UI
+    replyAuthorName.textContent = authorText;
+    replyMessagePreview.textContent = replyToMessage.text;
+    replyPanel.style.display = 'flex';
+    
+    // Фокус на инпут
+    messageInput.focus();
+}
+
+// Функция для отмены ответа
+function cancelReply() {
+    replyToMessage = null;
+    replyPanel.style.display = 'none';
+}
+
+// Обновленная функция отправки сообщения с поддержкой ответов
+async function sendMessage(text) {
+    if (!currentRoomId || !cryptoKey || !text.trim()) return;
+
+    try {
+        const encrypted = await encryptMessage(text, cryptoKey);
+        
+        // Проверяем, есть ли кто-то онлайн в комнате КРОМЕ НАС
+        let otherOnlineCount = 0;
+        try {
+            const presenceSnap = await db.ref(`rooms/${currentRoomId}/presence`).once('value');
+            if (presenceSnap.exists()) {
+                const users = presenceSnap.val() || {};
+                otherOnlineCount = Object.entries(users)
+                    .filter(([id, data]) => id !== userId && data && data.online === true)
+                    .length;
+            }
+        } catch (e) {
+            console.error('Error checking presence on send:', e);
+        }
+        
+        // Сообщение считается доставленным, только если есть другие онлайн пользователи
+        const isDelivered = otherOnlineCount > 0;
+        
+        console.log(`📤 Отправка сообщения: доставлено=${isDelivered}, других онлайн=${otherOnlineCount}`);
+        
+        // Создаем объект сообщения
+        const messageObj = {
+            data: encrypted,
+            from: userId,
+            ts: Date.now(),
+            delivered: isDelivered
+        };
+        
+        // Если это ответ на сообщение - добавляем поле replyTo
+        if (replyToMessage) {
+            messageObj.replyTo = {
+                id: replyToMessage.id,
+                text: replyToMessage.text,
+                from: replyToMessage.from
+            };
+        }
+
+        const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
+        
+        if (navigator.onLine) {
+            if (isDelivered) {
+                showStatus('✅ Сообщение доставлено');
+            } else {
+                showStatus('📤 Сообщение отправлено (ожидает доставки)');
+            }
+        } else {
+            showStatus('📦 Сообщение сохранено и будет доставлено при подключении');
+        }
+        
+        messageInput.value = '';
+        
+        // Отменяем ответ после отправки
+        cancelReply();
+        
+    } catch (error) {
+        console.error('Send error:', error);
+        showStatus('Ошибка отправки', true);
+    }
+}
 function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now()) {
     if (rooms.has(roomId)) return;
     
@@ -1943,7 +2202,8 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
                 roomKeyShort.textContent = `${roomId}:${room.keyBase64.substring(0, 6)}...`;
 
                 messagesContainer.innerHTML = '';
-                
+                // Отменяем ответ при смене комнаты
+cancelReply();
                 // Load messages
                 try {
                     await loadMessages(roomId, cryptoKey);
@@ -1990,7 +2250,7 @@ async function loadMessages(roomId, key) {
                 const decrypted = await decryptMessage(msg.data, key);
                 const isOwn = msg.from === userId;
                 // Передаем from для чужих сообщений
-                addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, msg.id, msg.from);
+                addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, msg.id, msg.from, msg);
             }
         }
     } catch (error) {
@@ -2018,7 +2278,7 @@ function setupMessagesListener(roomId, key) {
         
         const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
         if (!existingMessage) {
-            addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from);
+           addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from, msg);
             
             // Если это чужое сообщение и мы онлайн - немедленно помечаем как доставленное
             if (!isOwn && !msg.delivered) {
@@ -2079,7 +2339,7 @@ function setupMessagesListener(roomId, key) {
     });
 }
 
-function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId = null, messageFrom = null) {
+function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId = null, messageFrom = null, msgData = null) {
     const wrapper = document.createElement('div');
     wrapper.className = `message-wrapper ${isOwn ? 'own' : 'other'}`;
     
@@ -2102,6 +2362,42 @@ function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId =
         msgEl.dataset.messageId = messageId;
     }
     
+
+// Если это ответ на сообщение - показываем цитату
+if (msgData && msgData.replyTo) {
+    const replyQuote = document.createElement('div');
+    replyQuote.className = 'reply-quote';
+    
+    const replyAuthorSpan = document.createElement('div');
+    replyAuthorSpan.className = 'reply-quote-author';
+    
+    const isReplyToOwn = msgData.replyTo.from === userId;
+let replyAuthorText;
+
+if (isReplyToOwn) {
+    replyAuthorText = 'себя';
+    replyAuthorSpan.style.color = '#ffffff'; // белый для своих
+} else {
+    replyAuthorText = 'пользователя';
+    // Получаем цвет пользователя
+    const userColor = getUserColor(msgData.replyTo.from);
+    replyAuthorSpan.style.color = userColor;
+}
+
+replyAuthorSpan.innerHTML = `<i class="fas fa-reply"></i> ${replyAuthorText}`;
+replyAuthorSpan.style.fontWeight = '500';
+    
+    const replyTextSpan = document.createElement('div');
+    replyTextSpan.className = 'reply-quote-text';
+    replyTextSpan.textContent = msgData.replyTo.text;
+    
+    replyQuote.appendChild(replyAuthorSpan);
+    replyQuote.appendChild(replyTextSpan);
+    
+    msgEl.insertBefore(replyQuote, msgEl.firstChild);
+}
+
+
     const timeEl = document.createElement('div');
     timeEl.className = 'message-time';
     
@@ -2131,31 +2427,51 @@ function addMessageToUI(text, isOwn, timestamp, isDelivered = false, messageId =
     msgEl.appendChild(timeEl);
     contentDiv.appendChild(msgEl);
     
-    // Add delete button for own messages
-    if (isOwn && messageId) {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'delete-message-btn';
-        deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
-        deleteBtn.title = 'Удалить сообщение';
-        
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showConfirm(
-                'Удалить сообщение?',
-                'Вы уверены, что хотите удалить это сообщение для всех?',
-                () => deleteMessage(messageId)
-            );
-        });
-        
-        contentDiv.appendChild(deleteBtn);
-    }
+ // Создаем контейнер для кнопок действий
+const actionsContainer = document.createElement('div');
+actionsContainer.style.display = 'flex';
+actionsContainer.style.gap = '4px';
+
+// Кнопка ответа (для всех сообщений)
+const replyBtn = document.createElement('button');
+replyBtn.className = 'reply-message-btn';
+replyBtn.innerHTML = '<i class="fas fa-reply"></i>';
+replyBtn.title = 'Ответить';
+
+replyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setReplyTo(messageId, text, messageFrom);
+});
+
+actionsContainer.appendChild(replyBtn);
+
+// Кнопка удаления (только для своих)
+if (isOwn && messageId) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-message-btn';
+    deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteBtn.title = 'Удалить сообщение';
     
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showConfirm(
+            'Удалить сообщение?',
+            'Вы уверены, что хотите удалить это сообщение для всех?',
+            () => deleteMessage(messageId)
+        );
+    });
+    
+    actionsContainer.appendChild(deleteBtn);
+}
+
+contentDiv.appendChild(actionsContainer);
+
     wrapper.appendChild(contentDiv);
     
     messagesContainer.appendChild(wrapper);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
-// Функция отправки сообщения с полем delivered
+// Обновленная функция отправки сообщения с поддержкой ответов
 async function sendMessage(text) {
     if (!currentRoomId || !cryptoKey || !text.trim()) return;
 
@@ -2181,12 +2497,22 @@ async function sendMessage(text) {
         
         console.log(`📤 Отправка сообщения: доставлено=${isDelivered}, других онлайн=${otherOnlineCount}`);
         
+        // Создаем объект сообщения
         const messageObj = {
             data: encrypted,
             from: userId,
             ts: Date.now(),
             delivered: isDelivered
         };
+        
+        // Если это ответ на сообщение - добавляем поле replyTo
+        if (replyToMessage) {
+            messageObj.replyTo = {
+                id: replyToMessage.id,
+                text: replyToMessage.text,
+                from: replyToMessage.from
+            };
+        }
 
         const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
         
@@ -2201,6 +2527,10 @@ async function sendMessage(text) {
         }
         
         messageInput.value = '';
+        
+        // Отменяем ответ после отправки
+        cancelReply();
+        
     } catch (error) {
         console.error('Send error:', error);
         showStatus('Ошибка отправки', true);
@@ -2405,6 +2735,15 @@ function setupRoomPresence(roomId) {
                 }
             });
 
+            // Закрыть панель ответа
+closeReplyBtn.addEventListener('click', cancelReply);
+
+// При вводе нового сообщения (если пользователь начинает печатать что-то другое, ответ не отменяется)
+messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        cancelReply();
+    }
+});
 
 // ИНИЦИАЛИЗАЦИЯ С ГЛОБАЛЬНОЙ ОЧИСТКОЙ (БЕЗ loadPendingMessages)
 async function initialize() {
