@@ -11,7 +11,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
         }
 
         :root {
@@ -387,7 +387,6 @@
             gap: 16px;
             flex-shrink: 0;
         }
-
 
         .chat-header-left {
             display: flex;
@@ -1266,126 +1265,6 @@
         font-size: 0.85rem;
     }
 }
-
-/* Фиксированная шапка */
-.chat-header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: rgba(10, 10, 20, 0.95);
-    backdrop-filter: blur(10px);
-}
-
-/* Контейнер сообщений с учетом высоты */
-.messages-container {
-    height: calc(100vh - var(--header-height) - var(--input-area-height) - var(--safe-area-inset-bottom));
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* Адаптация при открытой клавиатуре */
-@media (max-width: 768px) {
-    .chat-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-    }
-    
-    .main {
-        padding-top: var(--header-height);
-    }
-    
-    .input-area {
-        position: sticky;
-        bottom: 0;
-        background: rgba(10, 10, 20, 0.95);
-        z-index: 100;
-    }
-}
-
-/* Фиксация шапки и правильное позиционирование */
-.chat-header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: rgba(10, 10, 20, 0.95);
-    backdrop-filter: blur(10px);
-}
-
-.main {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
-}
-
-.messages-container {
-    flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.input-area {
-    position: sticky;
-    bottom: 0;
-    background: rgba(10, 10, 20, 0.95);
-    backdrop-filter: blur(10px);
-    z-index: 100;
-}
-
-/* Мобильная версия */
-@media (max-width: 768px) {
-    .chat-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        z-index: 101;
-    }
-    
-    .main {
-        padding-top: var(--header-height);
-        height: 100vh;
-    }
-    
-    .messages-container {
-        height: calc(100vh - var(--header-height));
-        padding-bottom: 80px;
-    }
-    
-    .input-area {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 102;
-    }
-}
-/* Отступ для поля ввода */
-.input-area {
-    margin-bottom: env(safe-area-inset-bottom, 0px);
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
-}
-
-/* Для мобильных увеличенный отступ */
-@media (max-width: 768px) {
-    .input-area {
-        margin-bottom: 15px;
-        padding-bottom: 15px;
-    }
-}
-
-/* Для устройств с безопасной зоной (iPhone X и выше) */
-@supports (padding: max(0px)) {
-    .input-area {
-        padding-bottom: max(12px, env(safe-area-inset-bottom));
-        margin-bottom: max(0px, env(safe-area-inset-bottom));
-    }
-}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -1692,22 +1571,40 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
 
             // Добавьте эту функцию в начало скрипта (после генерации userId)
 function getUserColor(userId) {
+    // Используем userId для генерации стабильного цвета
     let hash = 0;
     for (let i = 0; i < userId.length; i++) {
         hash = ((hash << 5) - hash) + userId.charCodeAt(i);
         hash = hash & hash;
     }
     
-    // Hue (оттенок) - 0-360, берем из хеша
-    const hue = Math.abs(hash) % 360;
+    // Список ярких, хорошо различимых цветов
+    const colors = [
+        '#FF6B6B', // красный
+        '#4AE9A0', // зеленый
+        '#5D4EF0', // фиолетовый
+        '#FFAA00', // оранжевый
+        '#FF8C8C', // светло-красный
+        '#6B5BFF', // синий
+        '#FF69B4', // розовый
+        '#00D68F', // бирюзовый
+        '#FFB347', // желто-оранжевый
+        '#A35CFF', // лавандовый
+        '#FF7F50', // коралловый
+        '#20B2AA', // светло-морской
+        '#9370DB', // средне-фиолетовый
+        '#FFA07A', // светло-лососевый
+        '#3CB371', // морской зеленый
+        '#FF6347', // томатный
+        '#BA55D3', // средне-орхидейный
+        '#40E0D0', // бирюзовый
+        '#FFD700', // золотой
+        '#98FB98'  // бледно-зеленый
+    ];
     
-    // Saturation (насыщенность) - 65-85%, яркие цвета
-    const saturation = 65 + (Math.abs(hash * 13) % 21);
-    
-    // Lightness (яркость) - 55-70%, хорошо видно на темном фоне
-    const lightness = 55 + (Math.abs(hash * 17) % 16);
-    
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    // Берем абсолютное значение хеша и получаем индекс
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
 }
 
 
@@ -2265,8 +2162,7 @@ function cancelReply() {
 // Обновленная функция отправки сообщения с поддержкой ответов
 async function sendMessage(text) {
     if (!currentRoomId || !cryptoKey || !text.trim()) return;
-    const cursorPos = messageInput.selectionStart;
-    const scrollPos = messageInput.scrollTop;
+
     try {
         const encrypted = await encryptMessage(text, cryptoKey);
         
@@ -2325,11 +2221,10 @@ async function sendMessage(text) {
             console.log(`📊 Проверка размера комнаты ${currentRoomId} (после ${messageCount} сообщений)`);
             await roomCleanupBySize(currentRoomId, 50);
         }
-       messageInput.focus();
+       
     } catch (error) {
         console.error('Send error:', error);
         showStatus('Ошибка отправки', true);
-        messageInput.focus();
     }
 }
 function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now()) {
@@ -2739,7 +2634,67 @@ contentDiv.appendChild(actionsContainer);
     messagesContainer.appendChild(wrapper);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
+// Обновленная функция отправки сообщения с поддержкой ответов
+async function sendMessage(text) {
+    if (!currentRoomId || !cryptoKey || !text.trim()) return;
 
+    try {
+        const encrypted = await encryptMessage(text, cryptoKey);
+        
+        // Проверяем, есть ли кто-то онлайн в комнате КРОМЕ НАС
+        let otherOnlineCount = 0;
+        try {
+            const presenceSnap = await db.ref(`rooms/${currentRoomId}/presence`).once('value');
+            if (presenceSnap.exists()) {
+                const users = presenceSnap.val() || {};
+                otherOnlineCount = Object.entries(users)
+                    .filter(([id, data]) => id !== userId && data && data.online === true)
+                    .length;
+            }
+        } catch (e) {
+            console.error('Error checking presence on send:', e);
+        }
+        
+        // Сообщение считается доставленным, только если есть другие онлайн пользователи
+        const isDelivered = otherOnlineCount > 0;
+        
+        
+        
+        // Создаем объект сообщения
+        const messageObj = {
+            data: encrypted,
+            from: userId,
+            ts: Date.now(),
+            delivered: isDelivered
+        };
+        
+        // Если это ответ на сообщение - добавляем поле replyTo
+        if (replyToMessage) {
+            messageObj.replyTo = {
+                id: replyToMessage.id,
+                text: replyToMessage.text,
+                from: replyToMessage.from
+            };
+        }
+
+        const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
+        
+        if (navigator.onLine) {
+
+        } else {
+            showStatus('📦 Сообщение сохранено и будет доставлено при подключении');
+        }
+        
+        messageInput.value = '';
+        
+        // Отменяем ответ после отправки
+        cancelReply();
+        
+    } catch (error) {
+        console.error('Send error:', error);
+        showStatus('Ошибка отправки', true);
+    }
+}
 
             // Global presence setup
             function setupGlobalPresence() {
@@ -2895,28 +2850,17 @@ function setupRoomPresence(roomId) {
 
             // Event: Join room
             joinRoomBtn.addEventListener('click', async () => {
-    let fullKey = joinKeyInput.value.trim();
-    if (!fullKey) {
-        showStatus('Введите ключ', true);
-        return;
-    }
+                const fullKey = joinKeyInput.value.trim();
+                if (!fullKey) {
+                    showStatus('Введите ключ', true);
+                    return;
+                }
 
-    // Преобразуем первую часть (ID комнаты) в верхний регистр
-    const parts = fullKey.split(':');
-    if (parts.length >= 2) {
-        const roomId = parts[0].toUpperCase(); // ID комнаты в верхний регистр
-        const keyBase64 = parts[1];
-        fullKey = `${roomId}:${keyBase64}`;
-        
-        // Обновляем поле ввода для наглядности
-        joinKeyInput.value = fullKey;
-    }
-
-    const [roomId, keyBase64] = fullKey.split(':');
-    if (!roomId || !keyBase64) {
-        showStatus('Неверный формат ключа', true);
-        return;
-    }
+                const [roomId, keyBase64] = fullKey.split(':');
+                if (!roomId || !keyBase64) {
+                    showStatus('Неверный формат ключа', true);
+                    return;
+                }
 
                 try {
                     await importKey(keyBase64);
@@ -2955,12 +2899,8 @@ closeReplyBtn.addEventListener('click', cancelReply);
 
 // При вводе нового сообщения (если пользователь начинает печатать что-то другое, ответ не отменяется)
 messageInput.addEventListener('keydown', (e) => {
-    // Предотвращаем скрытие клавиатуры
-    e.stopPropagation();
-    
-    if (e.key === 'Enter' && e.shiftKey) {
-        e.preventDefault();
-        sendMessage(messageInput.value);
+    if (e.key === 'Escape') {
+        cancelReply();
     }
 });
 
@@ -3068,73 +3008,6 @@ document.addEventListener('touchstart', (e) => {
                     closeSidebar();
                }
             });
-
-          
-// Фиксация шапки при открытии клавиатуры
-if ('visualViewport' in window) {
-    let originalHeight = window.innerHeight;
-    let isKeyboardOpen = false;
-    
-    window.visualViewport.addEventListener('resize', () => {
-        const currentHeight = window.visualViewport.height;
-        const keyboardHeight = originalHeight - currentHeight;
-        
-        if (keyboardHeight > 100 && !isKeyboardOpen) {
-            // Клавиатура открылась
-            isKeyboardOpen = true;
-            
-            if (window.innerWidth <= 768) {
-                // Фиксируем шапку
-                document.querySelector('.chat-header').style.position = 'fixed';
-                document.querySelector('.chat-header').style.top = '0';
-                
-                // Поднимаем поле ввода
-                document.querySelector('.input-area').style.position = 'fixed';
-                document.querySelector('.input-area').style.bottom = '0';
-                
-                // Корректируем отступ для сообщений
-                document.querySelector('.messages-container').style.paddingBottom = '80px';
-                
-                // Прокручиваем к последнему сообщению
-                setTimeout(() => {
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                }, 100);
-            }
-        } else if (keyboardHeight < 50 && isKeyboardOpen) {
-            // Клавиатура закрылась
-            isKeyboardOpen = false;
-            
-            if (window.innerWidth <= 768) {
-                // Возвращаем стили
-                document.querySelector('.chat-header').style.position = '';
-                document.querySelector('.input-area').style.position = '';
-                document.querySelector('.messages-container').style.paddingBottom = '';
-            }
-        }
-        
-        originalHeight = currentHeight;
-    });
-}
-
-// При фокусе на поле ввода прокручиваем к нему
-messageInput.addEventListener('focus', () => {
-    setTimeout(() => {
-        if (window.innerWidth <= 768) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-    }, 300);
-});
-
-// При потере фокуса возвращаем всё назад
-messageInput.addEventListener('blur', () => {
-    setTimeout(() => {
-        if (window.innerWidth <= 768 && !isKeyboardOpen) {
-            document.querySelector('.chat-header').style.position = '';
-            document.querySelector('.input-area').style.position = '';
-            document.querySelector('.messages-container').style.paddingBottom = '';
-        }
-    }, 100);
-});
         })();
     </script>
 </body>
