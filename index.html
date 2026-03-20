@@ -11,7 +11,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: system-ui, sans-serif;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         }
 
         :root {
@@ -1265,51 +1265,6 @@
         font-size: 0.85rem;
     }
 }
-/* Системные шрифты для всего приложения */
-:root {
-    --font-system: system-ui, -apple-system, 'BlinkMacSystemFont', 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', sans-serif;
-    --font-mono: 'SF Mono', 'SFMono-Regular', 'Cascadia Code', 'Consolas', 'Roboto Mono', monospace;
-}
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: var(--font-system);
-}
-
-/* Специфические элементы */
-input, 
-button, 
-textarea, 
-select {
-    font-family: var(--font-system);
-}
-
-/* Моноширинные элементы */
-.chat-header-key,
-.room-key-display,
-code,
-pre,
-.key-hash,
-.encryption-badge code {
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-}
-
-/* iOS оптимизация */
-@supports (font: -apple-system-body) {
-    * {
-        font-family: -apple-system, BlinkMacSystemFont, var(--font-system);
-    }
-}
-
-/* Android оптимизация */
-@supports (font: system-ui) {
-    * {
-        font-family: system-ui, 'Roboto', 'Noto Sans', var(--font-system);
-    }
-}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -2026,9 +1981,25 @@ async function checkAllRoomsSize() {
             }
 
             // Update room online status in UI
+            function updateRoomOnlineStatus(roomId, isOnline) {
+                const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
+                if (roomItem) {
+                    const avatar = roomItem.querySelector('.room-avatar');
+                    let indicator = avatar.querySelector('.room-online-indicator');
+                    
+                    if (!indicator) {
+                        indicator = document.createElement('span');
+                        indicator.className = 'room-online-indicator';
+                        avatar.appendChild(indicator);
+                    }
+                    
+                    indicator.className = `room-online-indicator ${isOnline ? 'online' : 'offline'}`;
+                    
+                    // Сохраняем статус
+                    onlineStatusInRooms.set(roomId, isOnline);
+                }
+            }
 
-
-            
 async function markMessagesAsDelivered(roomId) {
     if (!roomId) return;
     
@@ -2169,9 +2140,10 @@ function cancelReply() {
     replyPanel.style.display = 'none';
 }
 
+// Обновленная функция отправки сообщения с поддержкой ответов
 async function sendMessage(text) {
     if (!currentRoomId || !cryptoKey || !text.trim()) return;
-    
+
     try {
         const encrypted = await encryptMessage(text, cryptoKey);
         
@@ -2185,21 +2157,14 @@ async function sendMessage(text) {
                     .filter(([id, data]) => id !== userId && data && data.online === true)
                     .length;
             }
-            
-            // Обновляем UI статуса при отправке
-            if (otherOnlineCount > 0) {
-                peerStatus.innerHTML = '<i class="fas fa-circle"></i> в сети';
-                peerStatus.className = 'status-badge online';
-            } else {
-                peerStatus.innerHTML = '<i class="fas fa-circle"></i> не в сети';
-                peerStatus.className = 'status-badge offline';
-            }
         } catch (e) {
             console.error('Error checking presence on send:', e);
         }
         
         // Сообщение считается доставленным, только если есть другие онлайн пользователи
         const isDelivered = otherOnlineCount > 0;
+        
+       
         
         // Создаем объект сообщения
         const messageObj = {
@@ -2218,29 +2183,29 @@ async function sendMessage(text) {
             };
         }
 
-        await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
+        const newMessageRef = await db.ref(`rooms/${currentRoomId}/messages`).push(messageObj);
+        
+        if (navigator.onLine) {
+
+        } else {
+            showStatus('📦 Сообщение сохранено и будет доставлено при подключении');
+        }
         
         messageInput.value = '';
         
         // Отменяем ответ после отправки
         cancelReply();
-        
-        // Счетчик сообщений и очистка
-        const messageCount = parseInt(localStorage.getItem(`msg_count_${currentRoomId}`) || '0') + 1;
+                const messageCount = parseInt(localStorage.getItem(`msg_count_${currentRoomId}`) || '0') + 1;
         localStorage.setItem(`msg_count_${currentRoomId}`, messageCount.toString());
         
         if (messageCount % 10 === 0) {
             console.log(`📊 Проверка размера комнаты ${currentRoomId} (после ${messageCount} сообщений)`);
-            await roomCleanupBySize(currentRoomId, 0.5); // 0.5 МБ лимит
+            await roomCleanupBySize(currentRoomId, 50);
         }
-        
-        // Возвращаем фокус на поле ввода
-        messageInput.focus();
-        
+       
     } catch (error) {
         console.error('Send error:', error);
         showStatus('Ошибка отправки', true);
-        messageInput.focus();
     }
 }
 function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now()) {
