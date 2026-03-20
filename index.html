@@ -1304,6 +1304,67 @@
         z-index: 100;
     }
 }
+
+/* Фиксация шапки и правильное позиционирование */
+.chat-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10, 10, 20, 0.95);
+    backdrop-filter: blur(10px);
+}
+
+.main {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.input-area {
+    position: sticky;
+    bottom: 0;
+    background: rgba(10, 10, 20, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 100;
+}
+
+/* Мобильная версия */
+@media (max-width: 768px) {
+    .chat-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        z-index: 101;
+    }
+    
+    .main {
+        padding-top: var(--header-height);
+        height: 100vh;
+    }
+    
+    .messages-container {
+        height: calc(100vh - var(--header-height));
+        padding-bottom: 80px;
+    }
+    
+    .input-area {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 102;
+    }
+}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -2987,34 +3048,71 @@ document.addEventListener('touchstart', (e) => {
                }
             });
 
-            // Работа с клавиатурой на мобильных
+          
+// Фиксация шапки при открытии клавиатуры
 if ('visualViewport' in window) {
-    let initialViewportHeight = window.visualViewport.height;
+    let originalHeight = window.innerHeight;
+    let isKeyboardOpen = false;
     
     window.visualViewport.addEventListener('resize', () => {
         const currentHeight = window.visualViewport.height;
+        const keyboardHeight = originalHeight - currentHeight;
         
-        if (currentHeight < initialViewportHeight * 0.8) {
-            // Клавиатура открыта
-            document.documentElement.style.setProperty('--input-bottom-offset', '0px');
-            document.body.style.height = `${window.visualViewport.height}px`;
+        if (keyboardHeight > 100 && !isKeyboardOpen) {
+            // Клавиатура открылась
+            isKeyboardOpen = true;
             
-            // Прокручиваем к последнему сообщению
-            setTimeout(() => {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }, 100);
-        } else {
-            // Клавиатура закрыта
-            document.body.style.height = '';
+            if (window.innerWidth <= 768) {
+                // Фиксируем шапку
+                document.querySelector('.chat-header').style.position = 'fixed';
+                document.querySelector('.chat-header').style.top = '0';
+                
+                // Поднимаем поле ввода
+                document.querySelector('.input-area').style.position = 'fixed';
+                document.querySelector('.input-area').style.bottom = '0';
+                
+                // Корректируем отступ для сообщений
+                document.querySelector('.messages-container').style.paddingBottom = '80px';
+                
+                // Прокручиваем к последнему сообщению
+                setTimeout(() => {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 100);
+            }
+        } else if (keyboardHeight < 50 && isKeyboardOpen) {
+            // Клавиатура закрылась
+            isKeyboardOpen = false;
+            
+            if (window.innerWidth <= 768) {
+                // Возвращаем стили
+                document.querySelector('.chat-header').style.position = '';
+                document.querySelector('.input-area').style.position = '';
+                document.querySelector('.messages-container').style.paddingBottom = '';
+            }
         }
+        
+        originalHeight = currentHeight;
     });
 }
 
-// Предотвращаем сжатие при фокусе на input
+// При фокусе на поле ввода прокручиваем к нему
 messageInput.addEventListener('focus', () => {
     setTimeout(() => {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (window.innerWidth <= 768) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     }, 300);
+});
+
+// При потере фокуса возвращаем всё назад
+messageInput.addEventListener('blur', () => {
+    setTimeout(() => {
+        if (window.innerWidth <= 768 && !isKeyboardOpen) {
+            document.querySelector('.chat-header').style.position = '';
+            document.querySelector('.input-area').style.position = '';
+            document.querySelector('.messages-container').style.paddingBottom = '';
+        }
+    }, 100);
 });
         })();
     </script>
