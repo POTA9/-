@@ -1365,6 +1365,27 @@
         z-index: 102;
     }
 }
+/* Отступ для поля ввода */
+.input-area {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Для мобильных увеличенный отступ */
+@media (max-width: 768px) {
+    .input-area {
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+    }
+}
+
+/* Для устройств с безопасной зоной (iPhone X и выше) */
+@supports (padding: max(0px)) {
+    .input-area {
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        margin-bottom: max(0px, env(safe-area-inset-bottom));
+    }
+}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
