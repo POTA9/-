@@ -11,7 +11,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            font-family: system-ui, sans-serif;
         }
 
         :root {
@@ -1981,25 +1981,9 @@ async function checkAllRoomsSize() {
             }
 
             // Update room online status in UI
-            function updateRoomOnlineStatus(roomId, isOnline) {
-                const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
-                if (roomItem) {
-                    const avatar = roomItem.querySelector('.room-avatar');
-                    let indicator = avatar.querySelector('.room-online-indicator');
-                    
-                    if (!indicator) {
-                        indicator = document.createElement('span');
-                        indicator.className = 'room-online-indicator';
-                        avatar.appendChild(indicator);
-                    }
-                    
-                    indicator.className = `room-online-indicator ${isOnline ? 'online' : 'offline'}`;
-                    
-                    // Сохраняем статус
-                    onlineStatusInRooms.set(roomId, isOnline);
-                }
-            }
 
+
+            
 async function markMessagesAsDelivered(roomId) {
     if (!roomId) return;
     
