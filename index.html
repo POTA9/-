@@ -1316,6 +1316,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
 </head>
 <body>
     <div class="app">
@@ -1426,6 +1427,32 @@
             firebase.initializeApp(firebaseConfig);
             const db = firebase.database();
 
+// Добавьте после const db = firebase.database();
+async function signInAnonymously() {
+    try {
+        const user = firebase.auth().currentUser;
+        if (user && user.isAnonymous) {
+            console.log('Already signed in:', user.uid);
+            return user;
+        }
+        
+        const userCredential = await firebase.auth().signInAnonymously();
+        
+        localStorage.setItem('userId', userCredential.user.uid);
+        return userCredential.user;
+    } catch (error) {
+        console.error('Anonymous sign-in error:', error);
+        const fallbackUserId = generateUserId();
+        return { uid: fallbackUserId };
+    }
+}
+
+
+
+
+
+
+
             // State
             let rooms = new Map();
             let currentRoomId = null;
@@ -1438,7 +1465,7 @@
             let connectedRef = null;
             let globalPresenceRef = null;
             let myGlobalPresenceRef = null;
-            let userId = generateUserId();
+            let userId = null;
 // Состояние для ответа на сообщение
 let replyToMessage = null; // { id, text, from, authorName }
 let roomsState = new Map();
@@ -1624,14 +1651,14 @@ function showLoadMoreButton() {
             });
 
             // Generate unique user ID
-            function generateUserId() {
-                let userId = localStorage.getItem('userId');
-                if (!userId) {
-                    userId = 'user_' + Math.random().toString(36).substring(2, 15);
-                    localStorage.setItem('userId', userId);
-                }
-                return userId;
-            }
+function generateUserId() {
+    let userId = localStorage.getItem('userId');
+    if (!userId) {
+        userId = 'user_' + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('userId', userId);
+    }
+    return userId;
+}
 
 
 
@@ -2880,43 +2907,42 @@ function addMessageToUIBeginning(text, isOwn, timestamp, isDelivered, messageId,
 }
 
 
-            // Global presence setup
-            function setupGlobalPresence() {
-                myGlobalPresenceRef = db.ref(`presence/${userId}`);
-                globalPresenceRef = db.ref('presence');
-
-                // Listen to connection state
-                connectedRef = db.ref('.info/connected');
-                
-                connectedRef.on('value', (snap) => {
-                    if (snap && snap.val() === true) {
-                        // We're connected, set up presence
-                        myGlobalPresenceRef.onDisconnect().remove();
-                        myGlobalPresenceRef.set({
-                            online: true,
-                            lastSeen: Date.now(),
-                            currentRoom: currentRoomId || null
-                        }).catch(error => console.error('Error setting presence:', error));
-                    }
-                });
-
-                // Count total and online users with immediate updates
-                globalPresenceRef.on('value', (snapshot) => {
-                    if (snapshot && snapshot.exists()) {
-                        const users = snapshot.val() || {};
-                        const onlineUsers = Object.values(users).filter(u => u && u.online === true).length;
-                        const totalUsers = Object.keys(users).length;
-                        
-                        globalOnlineCount.textContent = onlineUsers;
-                        totalUsersCount.textContent = totalUsers;
-                    } else {
-                        globalOnlineCount.textContent = '0';
-                        totalUsersCount.textContent = '0';
-                    }
-                }, (error) => {
-                    console.error('Error in global presence:', error);
-                });
-            }
+function setupGlobalPresence() {
+    if (!userId) return;
+    
+    myGlobalPresenceRef = db.ref(`presence/${userId}`);
+    globalPresenceRef = db.ref('presence');
+    
+    connectedRef = db.ref('.info/connected');
+    
+    connectedRef.on('value', (snap) => {
+        if (snap && snap.val() === true) {
+            myGlobalPresenceRef.onDisconnect().remove();
+            myGlobalPresenceRef.set({
+                online: true,
+                lastSeen: Date.now(),
+                currentRoom: currentRoomId || null,
+                userId: userId
+            }).catch(error => console.error('Error setting presence:', error));
+        }
+    });
+    
+    globalPresenceRef.on('value', (snapshot) => {
+        if (snapshot && snapshot.exists()) {
+            const users = snapshot.val() || {};
+            const onlineUsers = Object.values(users).filter(u => u && u.online === true).length;
+            const totalUsers = Object.keys(users).length;
+            
+            globalOnlineCount.textContent = onlineUsers;
+            totalUsersCount.textContent = totalUsers;
+        } else {
+            globalOnlineCount.textContent = '0';
+            totalUsersCount.textContent = '0';
+        }
+    }, (error) => {
+        console.error('Error in global presence:', error);
+    });
+}
 // Room presence setup with immediate updates
 function setupRoomPresence(roomId) {
     if (!roomId) return;
@@ -3220,6 +3246,11 @@ function checkAndShowLoadMoreButton() {
 // ИНИЦИАЛИЗАЦИЯ С ГЛОБАЛЬНОЙ ОЧИСТКОЙ (БЕЗ loadPendingMessages)
 async function initialize() {
     try {
+        // Анонимная авторизация
+        const user = await signInAnonymously();
+        userId = user.uid || generateUserId();
+        
+        
         // Загружаем сохраненные комнаты
         const savedRooms = loadSavedRooms();
         
@@ -3235,52 +3266,33 @@ async function initialize() {
             await switchRoom(lastRoom[0]);
         }
         
-        // ========== ГЛОБАЛЬНАЯ ОЧИСТКА ПРИ ЗАПУСКЕ ==========
-        // Проверяем, когда была последняя очистка
-        const lastGlobalCleanup = localStorage.getItem('global_cleanup_900mb');
-        const now = Date.now();
-        
-        // Очищаем если:
-        // 1. Никогда не было очистки
-        // 2. Прошло больше 24 часов с последней очистки
-        if (!lastGlobalCleanup || now - parseInt(lastGlobalCleanup) > 86400000) { // 24 часа
-           
-            await globalCleanupBySize(900); // 900 МБ лимит
-            localStorage.setItem('global_cleanup_900mb', now.toString());
-        } else {
-            const hoursLeft = Math.round((86400000 - (now - parseInt(lastGlobalCleanup))) / 3600000);
-            
-        }
-        // ===================================================
-                const lastRoomsCleanup = localStorage.getItem('rooms_cleanup_50mb');
-        
-        if (!lastRoomsCleanup || now - parseInt(lastRoomsCleanup) > 3600000) { // Каждый час
-            console.log('🔄 Запуск проверки комнат (лимит 50 МБ)...');
-            await checkAllRoomsSize();
-            localStorage.setItem('rooms_cleanup_50mb', now.toString());
-        }
         // Setup global presence
         if (typeof setupGlobalPresence === 'function') {
             setupGlobalPresence();
         }
         
+        // Глобальная очистка
+        const lastGlobalCleanup = localStorage.getItem('global_cleanup_900mb');
+        const now = Date.now();
+        
+        if (!lastGlobalCleanup || now - parseInt(lastGlobalCleanup) > 86400000) {
+            await globalCleanupBySize(900);
+            localStorage.setItem('global_cleanup_900mb', now.toString());
+        }
+        
+        const lastRoomsCleanup = localStorage.getItem('rooms_cleanup_50mb');
+        if (!lastRoomsCleanup || now - parseInt(lastRoomsCleanup) > 3600000) {
+            await checkAllRoomsSize();
+            localStorage.setItem('rooms_cleanup_50mb', now.toString());
+        }
+        
     } catch (error) {
         console.error('Error during initialization:', error);
+        userId = generateUserId();
+        
     }
-
-
-
-    function setupScrollLoader() {
-    messagesContainer.addEventListener('scroll', () => {
-        // Если скролл вверх и есть ещё сообщения и не идёт загрузка
-        if (messagesContainer.scrollTop === 0 && hasMoreMessages && !isLoadingMore && !allMessagesLoaded) {
-            // Загружаем ещё сообщения
-            loadMessages(currentRoomId, cryptoKey, true);
-        }
-    });
-}
-
-setupScrollHandler();
+    
+    setupScrollHandler();
 }
             initialize();
 
