@@ -92,36 +92,34 @@
 ```json
 {
   "rules": {
-    // Глобальное присутствие пользователей (кто онлайн)
+    ".read": "auth != null || true",
+    ".write": "auth != null || true",
+
     "presence": {
-      "$user_id": {
-        ".read": true,
-        ".write": "auth == null && $user_id === newData.child('online').val() ? true : false",
-        ".validate": "newData.hasChildren(['online', 'lastSeen'])"
+      "$uid": {
+        ".read": "auth != null || true",
+        ".write": "auth != null || true"
       }
     },
-    // Корневой узел комнат
+
     "rooms": {
       "$room_id": {
-        // Читать может любой, кто знает ID комнаты (т.к. нет авторизации)
-        ".read": true,
-        // Писать может любой, но с проверкой структуры
-        ".write": true,
-        
-        // Присутствие внутри комнаты
+        ".read": "auth != null || true",
+        ".write": "auth != null || true",
+
         "presence": {
-          "$user_id": {
-            ".write": true,
-            ".validate": "newData.hasChildren(['online', 'lastSeen', 'roomId'])"
+          "$uid": {
+            ".read": "auth != null || true",
+            ".write": "auth != null || true"
           }
         },
-        
-        // Сообщения
+
         "messages": {
+          ".indexOn": ["ts"],
           "$message_id": {
-            ".validate": "newData.hasChildren(['data', 'from', 'ts']) && newData.child('data').isString() && newData.child('ts').isNumber()",
-            // Разрешаем удалять только отправителю или всем (но для удаления не требуется auth, потому что нет логина, поэтому правило "write" открыто, но структура контролируется)
-            ".write": true
+            ".read": "auth != null || true",
+            ".write": "auth != null || true",
+            ".validate": "newData.hasChildren(['data', 'from', 'ts'])"
           }
         }
       }
