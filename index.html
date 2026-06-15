@@ -2880,43 +2880,95 @@ function addMessageToUIBeginning(text, isOwn, timestamp, isDelivered, messageId,
 }
 
 
-            // Global presence setup
-            function setupGlobalPresence() {
-                myGlobalPresenceRef = db.ref(`presence/${userId}`);
-                globalPresenceRef = db.ref('presence');
+// Global presence setup
+function setupGlobalPresence() {
+    myGlobalPresenceRef = db.ref(`presence/${userId}`); // На основе твоего скриншота, ветка называется 'presence'
+    globalPresenceRef = db.ref('presence');
 
-                // Listen to connection state
-                connectedRef = db.ref('.info/connected');
-                
-                connectedRef.on('value', (snap) => {
-                    if (snap && snap.val() === true) {
-                        // We're connected, set up presence
-                        myGlobalPresenceRef.onDisconnect().remove();
-                        myGlobalPresenceRef.set({
-                            online: true,
-                            lastSeen: Date.now(),
-                            currentRoom: currentRoomId || null
-                        }).catch(error => console.error('Error setting presence:', error));
-                    }
-                });
+    // Listen to connection state
+    connectedRef = db.ref('.info/connected');
+    connectedRef.on('value', (snap) => {
+        if (snap && snap.val() === true) {
+            // We're connected, set up presence
+            myGlobalPresenceRef.onDisconnect().remove();
+            myGlobalPresenceRef.set({
+                online: true,
+                lastSeen: Date.now(),
+                currentRoom: currentRoomId || null
+            }).catch(error => console.error('Error setting presence:', error));
+        }
+    });
 
-                // Count total and online users with immediate updates
-                globalPresenceRef.on('value', (snapshot) => {
-                    if (snapshot && snapshot.exists()) {
-                        const users = snapshot.val() || {};
-                        const onlineUsers = Object.values(users).filter(u => u && u.online === true).length;
-                        const totalUsers = Object.keys(users).length;
-                        
-                        globalOnlineCount.textContent = onlineUsers;
-                        totalUsersCount.textContent = totalUsers;
-                    } else {
-                        globalOnlineCount.textContent = '0';
-                        totalUsersCount.textContent = '0';
+    // Count total and online users with immediate updates
+    globalPresenceRef.on('value', (snapshot) => {
+        if (snapshot && snapshot.exists()) {
+            const users = snapshot.val() || {};
+            const onlineUsers = Object.values(users).filter(u => u && u.online === true).length;
+            const totalUsers = Object.keys(users).length;
+            globalOnlineCount.textContent = onlineUsers;
+            totalUsersCount.textContent = totalUsers;
+        } else {
+            globalOnlineCount.textContent = '0';
+            totalUsersCount.textContent = '0';
+        }
+    }, (error) => {
+        console.error('Error in global presence:', error);
+    });
+
+
+    // =========================================================================
+    // ДОБАВЛЯЕМ СЮДА: Глобальный слушатель статусов для боковой панели комнат
+    // =========================================================================
+    globalPresenceRef.on('value', (snapshot) => {
+        if (!snapshot || !snapshot.exists()) {
+            // Если ветка пуста, сбрасываем все комнаты в оффлайн (кроме текущей)
+            if (rooms && rooms.forEach) {
+                rooms.forEach((_, roomId) => {
+                    if (roomId !== currentRoomId && typeof updateRoomOnlineStatus === 'function') {
+                        updateRoomOnlineStatus(roomId, false);
                     }
-                }, (error) => {
-                    console.error('Error in global presence:', error);
                 });
             }
+            return;
+        }
+
+        const allStatuses = snapshot.val();
+        
+        // Карта для подсчета: roomId -> сколько ДРУГИХ пользователей сейчас там онлайн
+        const roomPeersCount = new Map();
+
+        // Пробегаемся по всем записям пользователей из глобальной ветки presence
+        Object.entries(allStatuses).forEach(([uid, userData]) => {
+            // Обязательно пропускаем себя! Нам важно присутствие именно ДРУГИХ людей
+            if (uid === userId) return;
+
+            // Если пользователь онлайн и у него заполнена комната
+            if (userData && userData.online === true && userData.currentRoom) {
+                const rId = userData.currentRoom;
+                roomPeersCount.set(rId, (roomPeersCount.get(rId) || 0) + 1);
+            }
+        });
+
+        // Обновляем индикаторы в боковой панели
+        if (rooms && rooms.forEach) {
+            rooms.forEach((_, roomId) => {
+                // Текущую активную комнату, в которой ты сидишь, не трогаем!
+                if (roomId === currentRoomId) return;
+
+                // Если в этой комнате есть хотя бы один другой онлайн-пользователь
+                const activePeers = roomPeersCount.get(roomId) || 0;
+                const isAnyPeerOnline = activePeers > 0;
+
+                // Вызываем твою стандартную функцию отрисовки статуса в UI
+                if (typeof updateRoomOnlineStatus === 'function') {
+                    updateRoomOnlineStatus(roomId, isAnyPeerOnline);
+                }
+            });
+        }
+    }, (error) => {
+        console.error("Ошибка при чтении статусов для боковой панели:", error);
+    });
+} // <-- Конец функции setupGlobalPresence
 // Room presence setup with immediate updates
 function setupRoomPresence(roomId) {
     if (!roomId) return;
