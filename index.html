@@ -1312,10 +1312,101 @@
 }
 
 
+
+/* Кнопка открытия QR-кода ключа в шапке */
+        .chat-header-qr-btn {
+            background: var(--bg-tertiary);
+            padding: 8px 16px;
+            border-radius: 40px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            border: 1px solid rgba(123, 110, 246, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            color: var(--text-primary);
+        }
+
+        .chat-header-qr-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent);
+        }
+
+        .chat-header-qr-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* Модальное окно для QR-кода */
+        .qr-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 4000;
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.2s;
+        }
+
+        .qr-modal-content {
+            background: var(--bg-secondary);
+            padding: 28px;
+            border-radius: 32px;
+            max-width: 360px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid var(--accent);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.2s;
+        }
+
+        .qr-modal-content h3 {
+            color: white;
+            font-size: 1.3rem;
+            margin-bottom: 8px;
+        }
+
+        .qr-modal-content p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+
+        .qr-code-box {
+            background: #ffffff;
+            padding: 16px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .qr-code-box canvas, .qr-code-box img {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .qr-modal-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
 </head>
 <body>
     <div class="app">
@@ -1367,10 +1458,10 @@
                         </p>
                     </div>
                 </div>
-                <div class="chat-header-key" id="roomKeyDisplay" title="Нажмите чтобы скопировать ключ">
-                    <span id="roomKeyShort"></span>
-                    <i class="fas fa-key" style="margin-left: 4px;"></i>
-                </div>
+                <button class="chat-header-qr-btn" id="roomQrBtn" title="Показать QR-код ключа">
+                     <i class="fas fa-qrcode"></i>
+                    <span>QR ключа</span>
+                </button>
             </div>
 
             <div class="messages-container" id="messagesContainer">
@@ -1478,8 +1569,7 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
             const joinKeyInput = document.getElementById('joinKeyInput');
             const currentRoomName = document.getElementById('currentRoomName');
             const peerStatus = document.getElementById('peerStatus');
-            const roomKeyShort = document.getElementById('roomKeyShort');
-            const roomKeyDisplay = document.getElementById('roomKeyDisplay');
+            const roomQrBtn = document.getElementById('roomQrBtn'); 
             const statusMessage = document.getElementById('statusMessage');
             const globalOnlineCount = document.getElementById('onlineCount');
             const totalUsersCount = document.getElementById('totalUsersCount');
@@ -2437,7 +2527,6 @@ async function switchRoom(roomId) {
     inputArea.style.display = 'flex';
     emptyState.style.display = 'none';
     currentRoomName.textContent = room.name || `Комната ${roomId}`;
-    roomKeyShort.textContent = `${roomId}:${room.keyBase64.substring(0, 6)}...`;
 
     messagesContainer.innerHTML = '';
     cancelReply();
@@ -3132,14 +3221,59 @@ function setupRoomPresence(roomId) {
             });
 
             // Event: Copy full key (click on header key)
-            roomKeyDisplay.addEventListener('click', () => {
-                if (currentRoomId) {
-                    const room = rooms.get(currentRoomId);
-                    if (room) {
-                        copyToClipboard(`${currentRoomId}:${room.keyBase64}`);
-                    }
-                }
-            });
+            roomQrBtn.addEventListener('click', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+
+    const fullKeyText = `${currentRoomId}:${room.keyBase64}`;
+
+    // Удаляем предыдущий модал, если открыт
+    const existingModal = document.getElementById('qrModalOverlay');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'qr-modal';
+    modal.id = 'qrModalOverlay';
+    modal.innerHTML = `
+        <div class="qr-modal-content">
+            <h3>QR-код чата</h3>
+            <p>Отсканируйте код или отправьте его другу</p>
+            <div class="qr-code-box" id="qrcodeContainer"></div>
+            <div class="qr-modal-buttons">
+                <button class="confirm-btn yes" id="modalCopyBtn" style="background: var(--accent);">
+                    <i class="fas fa-copy"></i> Скопировать ключ
+                </button>
+                <button class="confirm-btn no" id="modalCloseBtn">Закрыть</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Рисуем QR-код через подключенную библиотеку
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
+    QRCode.toCanvas(document.createElement('canvas'), fullKeyText, {
+        width: 200,
+        margin: 1,
+        color: { dark: '#000000', light: '#ffffff' }
+    }, (error, canvas) => {
+        if (!error && canvas) {
+            qrcodeContainer.innerHTML = '';
+            qrcodeContainer.appendChild(canvas);
+        }
+    });
+
+    // Кнопки внутри модального окна
+    document.getElementById('modalCopyBtn').addEventListener('click', () => {
+        copyToClipboard(fullKeyText);
+    });
+
+    const closeModal = () => modal.remove();
+    document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+});
 
             // Закрыть панель ответа
 closeReplyBtn.addEventListener('click', cancelReply);
