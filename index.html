@@ -47,29 +47,27 @@
             --message-other: #2a2a42;
         }
 
-        body {
-            background: linear-gradient(135deg, #0a0a14 0%, #131324 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            overflow: hidden;
-            position: fixed;
-            width: 100%;
-            height: 100%;
-        }
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    background: #0b0b16;
+}
 
-        .app {
-            width: 100%;
-            height: 100vh;
-            background: var(--bg-primary);
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border);
-            display: flex;
-            overflow: hidden;
-            color: var(--text-primary);
-            position: relative;
-        }
+.app {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    background: var(--bg-primary);
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border);
+    display: flex;
+    overflow: hidden;
+    color: var(--text-primary);
+    position: relative;
+}
 
         /* Боковая панель */
         .sidebar {
@@ -373,17 +371,17 @@
             pointer-events: none;
         }
 
-        /* Основная область */
-        .main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: var(--bg-primary);
-            min-width: 0;
-            position: relative;
-            height: 100vh;
-            overflow: hidden;
-        }
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    min-width: 0;
+    position: relative;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+}
 
         .chat-header {
             height: var(--header-height);
@@ -842,20 +840,12 @@
                 --input-bottom-offset: 15vh;
             }
 
-            body {
-                padding: 0;
-                overflow: hidden;
-                position: fixed;
-                width: 100%;
-                height: 100%;
-            }
-
-            .app {
-                height: 100vh;
-                max-height: 100vh;
-                border-radius: 0;
-                width: 100%;
-            }
+.app {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    width: 100%;
+}
 
             .sidebar {
                 position: absolute;
@@ -1009,11 +999,10 @@
         }
 
         /* Для устройств с безопасной зоной (iPhone) */
-        @supports (padding: max(0px)) {
-            .input-area {
-                margin-bottom: max(var(--input-bottom-offset), env(safe-area-inset-bottom));
-            }
-        }
+.input-area {
+    margin-bottom: 0 !important;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
 
         /* Ландшафтная ориентация */
         @media (max-height: 500px) and (orientation: landscape) {
@@ -1401,6 +1390,39 @@
             gap: 10px;
         }
 
+
+        .room-avatar {
+    position: relative !important;
+}
+.message-indicator {
+    position: absolute;
+    top: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    border: 2px solid var(--bg-secondary);
+    z-index: 5;
+}
+.message-indicator.my-pending {
+    background: var(--warning);
+    color: #000;
+    left: -4px;
+}
+.message-indicator.other-pending {
+    background: var(--accent);
+    color: white;
+    right: -4px;
+}
+.message-indicator i {
+    font-size: 8px !important;
+}
+.room-online-indicator {
+    z-index: 10;
+}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -1575,7 +1597,39 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
             const totalUsersCount = document.getElementById('totalUsersCount');
             const roomOnlineCount = document.getElementById('roomOnlineCount');
 
+// Точная подстройка высоты под видимую область браузера (адресная строка + клавиатура)
+const appContainer = document.querySelector('.app');
 
+function updateAppViewportHeight() {
+    if (!appContainer) return;
+    const viewportHeight = window.visualViewport
+        ? window.visualViewport.height
+        : window.innerHeight;
+    appContainer.style.height = `${viewportHeight}px`;
+    appContainer.style.maxHeight = `${viewportHeight}px`;
+}
+
+updateAppViewportHeight();
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+        updateAppViewportHeight();
+        // Прокручиваем чат вниз при появлении клавиатуры
+        if (document.activeElement === messageInput) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    });
+    window.visualViewport.addEventListener('scroll', () => {
+        window.scrollTo(0, 0);
+    });
+}
+
+messageInput.addEventListener('focus', () => {
+    setTimeout(() => {
+        updateAppViewportHeight();
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }, 300);
+});
 
 
 function hideLoadMoreButton() {
@@ -2403,42 +2457,7 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
     `;
     
     // Добавляем стили для новых индикаторов
-    const style = document.createElement('style');
-    style.textContent = `
-        .room-avatar {
-            position: relative !important;
-        }
-        .message-indicator {
-            position: absolute;
-            top: -4px;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 8px;
-            border: 2px solid var(--bg-secondary);
-            z-index: 5;
-        }
-        .message-indicator.my-pending {
-            background: var(--warning);
-            color: #000;
-            left: -4px;
-        }
-        .message-indicator.other-pending {
-            background: var(--accent);
-            color: white;
-            right: -4px;
-        }
-        .message-indicator i {
-            font-size: 8px !important;
-        }
-        .room-online-indicator {
-            z-index: 10;
-        }
-    `;
-    document.head.appendChild(style);
+  
     
     // Добавляем обработчики событий
     roomEl.addEventListener('click', (e) => {
