@@ -1450,7 +1450,7 @@ html, body {
                     <span class="global-online" id="globalOnlineCount">
                         <i class="fas fa-circle"></i> <span id="onlineCount">0</span> онлайн
                     </span>
-                    <span id="totalUsers">всего: <span id="totalUsersCount">0</span></span>
+                   
                 </div>
                 <button class="new-chat-btn" id="newChatBtn">
                     <i class="fas fa-plus"></i> Новый чат
@@ -1598,7 +1598,6 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
             const roomQrBtn = document.getElementById('roomQrBtn'); 
             const statusMessage = document.getElementById('statusMessage');
             const globalOnlineCount = document.getElementById('onlineCount');
-            const totalUsersCount = document.getElementById('totalUsersCount');
             const roomOnlineCount = document.getElementById('roomOnlineCount');
 
 // Точная подстройка высоты под видимую область браузера (адресная строка + клавиатура)
@@ -3011,17 +3010,18 @@ function setupGlobalPresence() {
         }
     });
 
+
+const onlineCountEl = document.getElementById('onlineCount');
     // Count total and online users with immediate updates
-    globalPresenceRef.on('value', (snapshot) => {
+globalPresenceRef.on('value', (snapshot) => {
+        if (!onlineCountEl) return;
+
         if (snapshot && snapshot.exists()) {
             const users = snapshot.val() || {};
             const onlineUsers = Object.values(users).filter(u => u && u.online === true).length;
-            const totalUsers = Object.keys(users).length;
-            globalOnlineCount.textContent = onlineUsers;
-            totalUsersCount.textContent = totalUsers;
+            onlineCountEl.textContent = onlineUsers;
         } else {
-            globalOnlineCount.textContent = '0';
-            totalUsersCount.textContent = '0';
+            onlineCountEl.textContent = '0';
         }
     }, (error) => {
         console.error('Error in global presence:', error);
