@@ -1430,6 +1430,53 @@ html, body {
 .room-online-indicator {
     z-index: 10;
 }
+@media (max-width: 768px) {
+    .chat-header-info p {
+        gap: 6px;
+        font-size: 0.75rem;
+    }
+
+    .chat-header-qr-btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    .chat-header-qr-btn span {
+        display: none;
+    }
+}
+@media (max-width: 768px) {
+    .chat-header-info p {
+        gap: 6px;
+        font-size: clamp(0.68rem, 2.8vw, 0.78rem);
+        line-height: 1.2;
+    }
+
+    .chat-header-info p .encryption-badge {
+        padding: 2px 7px;
+        font-size: 0.9em;
+        border-radius: 20px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+}
+@media (max-width: 480px) {
+    .chat-header-info p {
+        gap: 5px;
+        font-size: clamp(0.64rem, 3vw, 0.74rem);
+    }
+
+    .chat-header-info p .encryption-badge {
+        padding: 2px 6px;
+        font-size: 0.88em;
+    }
+
+    .chat-header-info p .encryption-badge i {
+        font-size: 0.85em;
+    }
+}
+
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
