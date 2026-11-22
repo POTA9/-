@@ -2105,13 +2105,14 @@ function updateRoomMessageIndicators(roomId) {
                 }
             }
 
-            function closeSidebar() {
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.remove('open');
-                    sidebarOverlay.classList.remove('active');
-                    document.body.style.overflow = '';
-                }
-            }
+function closeSidebar() {
+    if (isAnyRoomDragging || justFinishedRoomDrag) return;
+    if (window.innerWidth <= 768) {
+        sidebar.classList.remove('open');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
 
             function toggleSidebar() {
                 if (sidebar.classList.contains('open')) {
@@ -2167,7 +2168,7 @@ function handleTouchEnd(e) {
 
             // Закрыть меню при выборе чата (на мобильных)
 document.addEventListener('click', (e) => {
-    if (justFinishedRoomDrag) return;
+    if (isAnyRoomDragging || justFinishedRoomDrag) return;
     if (window.innerWidth <= 768) {
         if (e.target.closest('.room-item') && !e.target.closest('.room-action-btn')) {
             closeSidebar();
@@ -2580,6 +2581,7 @@ function enableRoomDragAndDrop(roomEl, roomId) {
     let holdTimer = null;
     let isDragging = false;
     let suppressClick = false;
+    let clearFinishedDragTimer = null;
     let startX = 0;
     let startY = 0;
     let initialLayoutTop = 0;
@@ -2593,6 +2595,14 @@ function enableRoomDragAndDrop(roomEl, roomId) {
             clearTimeout(holdTimer);
             holdTimer = null;
         }
+    };
+
+    const clearFinishedDragFlag = () => {
+        if (clearFinishedDragTimer) {
+            clearTimeout(clearFinishedDragTimer);
+            clearFinishedDragTimer = null;
+        }
+        justFinishedRoomDrag = false;
     };
 
     const lockListScroll = () => {
@@ -2633,7 +2643,6 @@ function enableRoomDragAndDrop(roomEl, roomId) {
         const siblings = [...roomsListEl.querySelectorAll('.room-item')].filter((el) => el !== roomEl);
         siblings.forEach((el) => el.classList.remove('drag-over-top', 'drag-over-bottom'));
 
-        // Ищем ближайшего соседа, которого палец реально пересёк по центру
         let targetBefore = null;
         let targetAfter = null;
 
@@ -2643,12 +2652,10 @@ function enableRoomDragAndDrop(roomEl, roomId) {
             const pos = roomEl.compareDocumentPosition(el);
 
             if (clientY < centerY && (pos & Node.DOCUMENT_POSITION_PRECEDING)) {
-                // Берём самый верхний элемент, чью середину мы пересекли сверху
                 if (!targetBefore || rect.top < targetBefore.getBoundingClientRect().top) {
                     targetBefore = el;
                 }
             } else if (clientY > centerY && (pos & Node.DOCUMENT_POSITION_FOLLOWING)) {
-                // Берём самый нижний элемент, чью середину мы пересекли снизу
                 if (!targetAfter || rect.bottom > targetAfter.getBoundingClientRect().bottom) {
                     targetAfter = el;
                 }
@@ -2719,10 +2726,10 @@ function enableRoomDragAndDrop(roomEl, roomId) {
         cleanupDragVisuals();
         saveRoomsOrderFromDOM();
 
-    setTimeout(() => {
+        clearFinishedDragTimer = setTimeout(() => {
             suppressClick = false;
-            justFinishedRoomDrag = false;
-        }, 250);
+            clearFinishedDragFlag();
+        }, 1000);
     };
 
     function attachGlobalListeners() {
@@ -2750,6 +2757,7 @@ function enableRoomDragAndDrop(roomEl, roomId) {
         const { x, y } = extractClientCoords(e);
         if (typeof x !== 'number' || typeof y !== 'number') return;
 
+        clearFinishedDragFlag();
         startX = x;
         startY = y;
 
@@ -2780,10 +2788,11 @@ function enableRoomDragAndDrop(roomEl, roomId) {
     });
 
     roomEl.addEventListener('click', (e) => {
-        if (suppressClick) {
+        if (suppressClick || justFinishedRoomDrag) {
             e.stopPropagation();
             e.preventDefault();
             suppressClick = false;
+            clearFinishedDragFlag();
         }
     }, true);
 }
