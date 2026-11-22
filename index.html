@@ -1623,6 +1623,111 @@ function detachCurrentMessagesListener() {
     currentMessagesListener = null;
 }
 
+
+
+
+
+
+
+const BASE_TITLE = document.title || 'Кефир';
+let unreadNotificationsCount = 0;
+const appStartTimestamp = Date.now();
+const notifiedMessageKeys = new Set();
+const backgroundAlertListeners = new Map();
+
+function updateTabTitleIndicator() {
+    if (unreadNotificationsCount > 0) {
+        document.title = `• (${unreadNotificationsCount}) ${BASE_TITLE}`;
+    } else {
+        document.title = BASE_TITLE;
+    }
+}
+
+function clearTabTitleIndicator() {
+    unreadNotificationsCount = 0;
+    updateTabTitleIndicator();
+}
+
+async function ensureNotificationPermission() {
+    if (!('Notification' in window)) return false;
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') return false;
+
+    try {
+        const permission = await Notification.requestPermission();
+        return permission === 'granted';
+    } catch (e) {
+        return false;
+    }
+}
+
+function triggerIncomingAlert(roomId, msgKey, msg) {
+    if (!msg || msg.from === userId || msg.deleted) return;
+    if (notifiedMessageKeys.has(msgKey)) return;
+
+    const msgTime = msg.ts || 0;
+    if (msgTime < appStartTimestamp - 2000) return;
+
+    const isOtherRoom = roomId !== currentRoomId;
+    const isTabHidden = document.hidden === true;
+
+    if (!isOtherRoom && !isTabHidden) return;
+
+    notifiedMessageKeys.add(msgKey);
+    unreadNotificationsCount += 1;
+    updateTabTitleIndicator();
+
+    const roomInfo = rooms.get(roomId);
+    const roomTitle = (roomInfo && roomInfo.name) ? roomInfo.name : `Чат ${roomId}`;
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+        const n = new Notification(roomTitle, {
+            body: '• Новое сообщение',
+            tag: `kefir-room-${roomId}`,
+            renotify: true,
+            silent: false
+        });
+
+        n.onclick = () => {
+            window.focus();
+            if (rooms.has(roomId)) {
+                switchRoom(roomId);
+            }
+            clearTabTitleIndicator();
+            n.close();
+        };
+    }
+}
+
+function attachBackgroundAlertListener(roomId) {
+    if (!rooms.has(roomId) || backgroundAlertListeners.has(roomId)) return;
+
+    
+    const query = db.ref(`rooms/${roomId}/messages`).orderByKey().limitToLast(1);
+    const onChildAdded = (snap) => {
+        if (!snap || !snap.exists()) return;
+        triggerIncomingAlert(roomId, snap.key, snap.val());
+    };
+
+    query.on('child_added', onChildAdded);
+    backgroundAlertListeners.set(roomId, { query, onChildAdded });
+}
+
+function detachBackgroundAlertListener(roomId) {
+    const entry = backgroundAlertListeners.get(roomId);
+    if (entry) {
+        entry.query.off('child_added', entry.onChildAdded);
+        backgroundAlertListeners.delete(roomId);
+    }
+}
+
+
+
+
+
+
+
+
 // Добавьте эти переменные в начало скрипта, после других let переменных
 let currentLastTimestamp = null; // Для хранения временной метки последнего загруженного сообщения
 let isLoadingMore = false; // Флаг загрузки
@@ -1663,6 +1768,14 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
             const statusMessage = document.getElementById('statusMessage');
             const globalOnlineCount = document.getElementById('onlineCount');
             const roomOnlineCount = document.getElementById('roomOnlineCount');
+
+
+
+
+
+
+
+            
 
 // Точная подстройка высоты под видимую область браузера (адресная строка + клавиатура)
 const appContainer = document.querySelector('.app');
@@ -2347,7 +2460,7 @@ async function checkAllRoomsSize() {
 
             function deleteRoom(roomId) {
 detachMenuLastMessageListener(roomId);
-
+detachBackgroundAlertListener(roomId);
 
                   if (roomId) {
         db.ref(`rooms/${roomId}/presence/${userId}`).remove()
@@ -2680,7 +2793,7 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
 async function switchRoom(roomId) {
     const room = rooms.get(roomId);
     if (!room) return;
-
+    clearTabTitleIndicator();
     if (currentRoomId) {
         try {
             // Сохраняем состояние текущей комнаты
@@ -2932,6 +3045,7 @@ function setupMessagesListener(roomId, key) {
         if (!msg || !msg.data || msg.deleted) return;
 
         const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
+        attachBackgroundAlertListener(roomId);
         if (existingMessage) return;
 
         const isOwn = msg.from === userId;
@@ -2966,7 +3080,7 @@ function setupMessagesListener(roomId, key) {
 
         if (loadMoreButton && messagesContainer.scrollTop > 100) {
             loadMoreButton.style.display = 'none';
-        }
+        }   
     };
 
     messagesChangedHandler = (snapshot) => {
@@ -3353,6 +3467,7 @@ function setupRoomPresence(roomId) {
             // Event: New chat
             newChatBtn.addEventListener('click', async () => {
                 try {
+                ensureNotificationPermission();
                     const roomId = generateRoomId();
                     const { key, keyBase64 } = await generateCryptoKey();
                     
@@ -3374,6 +3489,7 @@ function setupRoomPresence(roomId) {
 
             // Event: Join room
             joinRoomBtn.addEventListener('click', async () => {
+            ensureNotificationPermission();
  let fullKey = joinKeyInput.value.trim();
     if (!fullKey) {
         showStatus('Введите ключ', true);
@@ -3691,6 +3807,7 @@ ensureAllRoomMenuListeners()
                     detachCurrentMessagesListener();
                     menuLastMsgListeners.forEach((_, roomId) => {
     detachMenuLastMessageListener(roomId);
+    
 });
 
 
@@ -3726,6 +3843,16 @@ document.addEventListener('touchstart', (e) => {
                     closeSidebar();
                }
             });
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        clearTabTitleIndicator();
+    }
+});
+
+window.addEventListener('focus', () => {
+    clearTabTitleIndicator();
+});
+
         })();
     </script>
 </body>
