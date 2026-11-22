@@ -1417,7 +1417,7 @@ html, body {
 .message-indicator.my-pending {
     background: var(--warning);
     color: #000;
-    left: -4px;
+    right: -4px;
 }
 .message-indicator.other-pending {
     background: var(--accent);
@@ -1430,6 +1430,7 @@ html, body {
 .room-online-indicator {
     z-index: 10;
 }
+
 @media (max-width: 768px) {
     .chat-header-info p {
         gap: 6px;
@@ -1476,7 +1477,6 @@ html, body {
         font-size: 0.85em;
     }
 }
-
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -1650,6 +1650,9 @@ const closeReplyBtn = document.getElementById('closeReplyBtn');
 // Точная подстройка высоты под видимую область браузера (адресная строка + клавиатура)
 const appContainer = document.querySelector('.app');
 
+const roomIndicatorListeners = new Map();
+
+
 function updateAppViewportHeight() {
     if (!appContainer) return;
     const viewportHeight = window.visualViewport
@@ -1695,54 +1698,89 @@ function showLoadMoreButton() {
     }
 }
 
-            function updateRoomMessageIndicators(roomId) {
+function applyRoomPendingIndicators(roomId, snapshot) {
     const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
     if (!roomItem) return;
-    
+
     const avatar = roomItem.querySelector('.room-avatar');
-    
-    // Удаляем старые индикаторы сообщений
-    const oldIndicators = avatar.querySelectorAll('.message-indicator');
-    oldIndicators.forEach(el => el.remove());
-    
-    // Получаем статистику сообщений для комнаты
-    db.ref(`rooms/${roomId}/messages`).once('value', (snapshot) => {
-        if (!snapshot.exists()) return;
-        
-        let myPendingCount = 0;
-        let otherPendingCount = 0;
-        
-        snapshot.forEach((msgSnapshot) => {
-            const msg = msgSnapshot.val();
-            if (msg && !msg.deleted && msg.delivered === false) {
-                if (msg.from === userId) {
-                    myPendingCount++;
-                } else {
-                    otherPendingCount++;
-                }
+    if (!avatar) return;
+
+    avatar.querySelectorAll('.message-indicator').forEach(el => el.remove());
+
+    if (!snapshot || !snapshot.exists()) return;
+
+    let myPendingCount = 0;
+    let otherPendingCount = 0;
+
+    snapshot.forEach((msgSnapshot) => {
+        const msg = msgSnapshot.val();
+        if (msg && !msg.deleted && msg.delivered === false) {
+            if (msg.from === userId) {
+                myPendingCount++;
+            } else {
+                otherPendingCount++;
             }
-        });
-        
-        // Добавляем индикатор для своих сообщений с часиками (слева сверху)
-        if (myPendingCount > 0) {
-            const myIndicator = document.createElement('span');
-            myIndicator.className = 'message-indicator my-pending';
-            myIndicator.setAttribute('data-side', 'left');
-            myIndicator.title = `${myPendingCount} ваших сообщений ожидают доставки`;
-            myIndicator.innerHTML = '<i class="fas fa-clock" style="font-size: 8px;"></i>';
-            avatar.appendChild(myIndicator);
-        }
-        
-        // Добавляем индикатор для чужих сообщений с часиками (справа сверху)
-        if (otherPendingCount > 0) {
-            const otherIndicator = document.createElement('span');
-            otherIndicator.className = 'message-indicator other-pending';
-            otherIndicator.setAttribute('data-side', 'right');
-            otherIndicator.title = `${otherPendingCount} сообщений от других ожидают доставки`;
-            otherIndicator.innerHTML = '<i class="fas fa-lock" style="font-size: 8px;"></i>';
-            avatar.appendChild(otherIndicator);
         }
     });
+
+    if (myPendingCount > 0) {
+        const myIndicator = document.createElement('span');
+        myIndicator.className = 'message-indicator my-pending';
+        myIndicator.setAttribute('data-side', 'left');
+        myIndicator.title = `${myPendingCount} ваших сообщений ожидают доставки`;
+        myIndicator.innerHTML = '<i class="fas fa-clock" style="font-size: 8px;"></i>';
+        avatar.appendChild(myIndicator);
+    }
+
+    if (otherPendingCount > 0) {
+        const otherIndicator = document.createElement('span');
+        otherIndicator.className = 'message-indicator other-pending';
+        otherIndicator.setAttribute('data-side', 'right');
+        otherIndicator.title = `${otherPendingCount} сообщений от других ожидают доставки`;
+        otherIndicator.innerHTML = '<i class="fas fa-lock" style="font-size: 8px;"></i>';
+        avatar.appendChild(otherIndicator);
+    }
+}
+
+function setupRoomIndicatorsListener(roomId) {
+    if (!roomId || roomIndicatorListeners.has(roomId)) return;
+
+    const ref = db.ref(`rooms/${roomId}/messages`);
+    let debounceTimer = null;
+
+    const handleChange = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            ref.once('value')
+                .then((snapshot) => applyRoomPendingIndicators(roomId, snapshot))
+                .catch((err) => console.error(`Ошибка обновления индикаторов для ${roomId}:`, err));
+        }, 80);
+    };
+
+    ref.on('child_added', handleChange);
+    ref.on('child_changed', handleChange);
+    ref.on('child_removed', handleChange);
+
+    roomIndicatorListeners.set(roomId, { ref, handleChange, getTimer: () => debounceTimer });
+}
+
+function cleanupRoomIndicatorsListener(roomId) {
+    const entry = roomIndicatorListeners.get(roomId);
+    if (!entry) return;
+
+    clearTimeout(entry.getTimer());
+    entry.ref.off('child_added', entry.handleChange);
+    entry.ref.off('child_changed', entry.handleChange);
+    entry.ref.off('child_removed', entry.handleChange);
+    roomIndicatorListeners.delete(roomId);
+}
+
+function updateRoomMessageIndicators(roomId) {
+    if (!roomId) return;
+    db.ref(`rooms/${roomId}/messages`)
+        .once('value')
+        .then((snapshot) => applyRoomPendingIndicators(roomId, snapshot))
+        .catch((err) => console.error(`Ошибка получения сообщений для ${roomId}:`, err));
 }
             // Функции для управления меню
             function openSidebar() {
@@ -2236,7 +2274,7 @@ async function checkAllRoomsSize() {
                     if (roomPresenceRef) roomPresenceRef.off();
                     if (currentMessagesListener) currentMessagesListener();
                 }
-                
+                cleanupRoomIndicatorsListener(roomId);
                 showStatus('🗑️ Чат удален');
             }
 
@@ -2331,19 +2369,14 @@ async function markMessagesAsDelivered(roomId) {
                 }
             }
         }
+        updateRoomMessageIndicators(roomId);
     } catch (error) {
         console.error('❌ Error marking messages as delivered:', error);
     }
 }
 
 // Добавьте периодическое обновление индикаторов (каждые 5 секунд)
-setInterval(() => {
-   if (rooms.size > 0) {
-       rooms.forEach((_, roomId) => {
-           updateRoomMessageIndicators(roomId);
-        });
- }
-}, 4000);
+
 
             // Delete message
             async function deleteMessage(messageId) {
@@ -2535,7 +2568,8 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
     roomsListEl.appendChild(roomEl);
     
     // Обновляем индикаторы для этой комнаты
-    setTimeout(() => updateRoomMessageIndicators(roomId), 100);
+    setupRoomIndicatorsListener(roomId);
+    updateRoomMessageIndicators(roomId);
 }
 
 
@@ -2603,6 +2637,8 @@ async function switchRoom(roomId) {
     // Load messages
     try {
         await loadMessages(roomId, cryptoKey, false);
+        await markMessagesAsDelivered(roomId);
+        updateRoomMessageIndicators(roomId);
     } catch (error) {
         console.error('Error loading messages:', error);
     }
@@ -3097,14 +3133,19 @@ globalPresenceRef.on('value', (snapshot) => {
         const roomPeersCount = new Map();
 
         // Пробегаемся по всем записям пользователей из глобальной ветки presence
+// Пробегаемся по всем записям пользователей из глобальной ветки presence
         Object.entries(allStatuses).forEach(([uid, userData]) => {
-            // Обязательно пропускаем себя! Нам важно присутствие именно ДРУГИХ людей
             if (uid === userId) return;
 
-            // Если пользователь онлайн и у него заполнена комната
             if (userData && userData.online === true && userData.currentRoom) {
                 const rId = userData.currentRoom;
                 roomPeersCount.set(rId, (roomPeersCount.get(rId) || 0) + 1);
+
+                // Если собеседник онлайн в комнате, которая есть у нас в списке,
+                // помечаем наши сообщения в ней доставленными, чтобы часики не висели
+                if (rooms && rooms.has(rId)) {
+                    markMessagesAsDelivered(rId);
+                }
             }
         });
 
@@ -3553,6 +3594,9 @@ setupScrollHandler();
                 .catch(error => console.log(`Error removing from ${roomId}:`, error));
         }
 
+Array.from(roomIndicatorListeners.keys()).forEach((roomId) => {
+            cleanupRoomIndicatorsListener(roomId);
+        });
                    
                     if (connectedRef) connectedRef.off();
                     if (globalPresenceRef) globalPresenceRef.off();
