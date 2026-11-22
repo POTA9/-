@@ -1481,18 +1481,19 @@ html, body {
 .room-item {
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
     touch-action: pan-y;
 }
 
 .room-item.dragging {
-    opacity: 0.85;
-    transform: scale(0.99);
+    opacity: 0.88;
     border-color: var(--accent);
     background: rgba(93, 78, 240, 0.24);
     z-index: 30;
     touch-action: none;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
     transition: none;
+    will-change: transform;
 }
 
 .room-item.drag-over-top {
@@ -2582,6 +2583,7 @@ function enableRoomDragAndDrop(roomEl, roomId) {
     let initialLayoutTop = 0;
     let currentLayoutTop = 0;
     let currentTranslateY = 0;
+    let prevListOverflowY = '';
     let lastSwapTime = 0;
 
     const clearHoldTimer = () => {
@@ -2591,7 +2593,17 @@ function enableRoomDragAndDrop(roomEl, roomId) {
         }
     };
 
+    const lockListScroll = () => {
+        prevListOverflowY = roomsListEl.style.overflowY;
+        roomsListEl.style.overflowY = 'hidden';
+    };
+
+    const unlockListScroll = () => {
+        roomsListEl.style.overflowY = prevListOverflowY || '';
+    };
+
     const cleanupDragVisuals = () => {
+        unlockListScroll();
         roomEl.classList.remove('dragging');
         roomEl.style.transform = '';
         currentTranslateY = 0;
@@ -2603,12 +2615,10 @@ function enableRoomDragAndDrop(roomEl, roomId) {
     const applyVisualTransform = (clientY) => {
         const desiredVisualTop = initialLayoutTop + (clientY - startY);
         currentTranslateY = desiredVisualTop - currentLayoutTop;
-        roomEl.style.transform = `translateY(${currentTranslateY}px) scale(0.99)`;
+        roomEl.style.transform = `translate3d(0, ${currentTranslateY}px, 0) scale(0.99)`;
     };
 
     const syncLayoutTopAfterReorder = (clientY) => {
-        // Текущий rect.top включает старый currentTranslateY, поэтому вычитаем его,
-        // чтобы получить чистую позицию карточки в потоке после вставки
         const rectTopWithOldTransform = roomEl.getBoundingClientRect().top;
         currentLayoutTop = rectTopWithOldTransform - currentTranslateY;
         applyVisualTransform(clientY);
@@ -2616,40 +2626,64 @@ function enableRoomDragAndDrop(roomEl, roomId) {
 
     const tryReorderAtY = (clientY) => {
         const now = Date.now();
-        if (now - lastSwapTime < 90) return;
+        if (now - lastSwapTime < 85) return;
 
         const siblings = [...roomsListEl.querySelectorAll('.room-item')].filter((el) => el !== roomEl);
         siblings.forEach((el) => el.classList.remove('drag-over-top', 'drag-over-bottom'));
 
+        // Ищем ближайшего соседа, которого палец реально пересёк по центру
+        let targetBefore = null;
+        let targetAfter = null;
+
         for (const el of siblings) {
             const rect = el.getBoundingClientRect();
             const centerY = rect.top + rect.height / 2;
+            const pos = roomEl.compareDocumentPosition(el);
 
-            // Тянем вверх и палец выше середины соседа — ставим перед ним
-            if (clientY < centerY && roomEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
-                el.classList.add('drag-over-top');
-                roomsListEl.insertBefore(roomEl, el);
-                syncLayoutTopAfterReorder(clientY);
-                lastSwapTime = now;
-                break;
+            if (clientY < centerY && (pos & Node.DOCUMENT_POSITION_PRECEDING)) {
+                // Берём самый верхний элемент, чью середину мы пересекли сверху
+                if (!targetBefore || rect.top < targetBefore.getBoundingClientRect().top) {
+                    targetBefore = el;
+                }
+            } else if (clientY > centerY && (pos & Node.DOCUMENT_POSITION_FOLLOWING)) {
+                // Берём самый нижний элемент, чью середину мы пересекли снизу
+                if (!targetAfter || rect.bottom > targetAfter.getBoundingClientRect().bottom) {
+                    targetAfter = el;
+                }
             }
+        }
 
-            // Тянем вниз и палец ниже середины соседа — ставим после него
-            if (clientY > centerY && roomEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
-                el.classList.add('drag-over-bottom');
-                roomsListEl.insertBefore(roomEl, el.nextSibling);
-                syncLayoutTopAfterReorder(clientY);
-                lastSwapTime = now;
-                break;
-            }
+        if (targetBefore) {
+            targetBefore.classList.add('drag-over-top');
+            roomsListEl.insertBefore(roomEl, targetBefore);
+            syncLayoutTopAfterReorder(clientY);
+            lastSwapTime = now;
+        } else if (targetAfter) {
+            targetAfter.classList.add('drag-over-bottom');
+            roomsListEl.insertBefore(roomEl, targetAfter.nextSibling);
+            syncLayoutTopAfterReorder(clientY);
+            lastSwapTime = now;
         }
     };
 
-    const onWindowPointerMove = (e) => {
+    const extractClientCoords = (e) => {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    };
+
+    const onMove = (e) => {
+        const { x, y } = extractClientCoords(e);
+        if (typeof y !== 'number') return;
+
         if (!isDragging) {
-            if (holdTimer && (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10)) {
+            if (holdTimer && (Math.abs(x - startX) > 10 || Math.abs(y - startY) > 10)) {
                 clearHoldTimer();
-                detachWindowListeners();
+                detachGlobalListeners();
             }
             return;
         }
@@ -2658,21 +2692,23 @@ function enableRoomDragAndDrop(roomEl, roomId) {
             e.preventDefault();
         }
 
-        applyVisualTransform(e.clientY);
-        tryReorderAtY(e.clientY);
+        applyVisualTransform(y);
+        tryReorderAtY(y);
     };
 
-    const onWindowPointerUp = (e) => {
+    const onEnd = (e) => {
         clearHoldTimer();
-        detachWindowListeners();
+        detachGlobalListeners();
 
         if (!isDragging) {
             isAnyRoomDragging = false;
+            unlockListScroll();
             return;
         }
 
-        if (typeof e.clientY === 'number') {
-            tryReorderAtY(e.clientY);
+        const { y } = extractClientCoords(e);
+        if (typeof y === 'number') {
+            tryReorderAtY(y);
         }
 
         isDragging = false;
@@ -2682,30 +2718,39 @@ function enableRoomDragAndDrop(roomEl, roomId) {
 
         setTimeout(() => {
             suppressClick = false;
-        }, 100);
+        }, 120);
     };
 
-    function attachWindowListeners() {
-        window.addEventListener('pointermove', onWindowPointerMove, { passive: false });
-        window.addEventListener('pointerup', onWindowPointerUp);
-        window.addEventListener('pointercancel', onWindowPointerUp);
+    function attachGlobalListeners() {
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', onEnd);
+        window.addEventListener('pointercancel', onEnd);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onEnd);
+        window.addEventListener('touchcancel', onEnd);
     }
 
-    function detachWindowListeners() {
-        window.removeEventListener('pointermove', onWindowPointerMove);
-        window.removeEventListener('pointerup', onWindowPointerUp);
-        window.removeEventListener('pointercancel', onWindowPointerUp);
+    function detachGlobalListeners() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onEnd);
+        window.removeEventListener('touchcancel', onEnd);
     }
 
-    roomEl.addEventListener('pointerdown', (e) => {
+    const beginHold = (e) => {
         if (e.target.closest('.room-action-btn')) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
 
-        startX = e.clientX;
-        startY = e.clientY;
+        const { x, y } = extractClientCoords(e);
+        if (typeof x !== 'number' || typeof y !== 'number') return;
 
-        detachWindowListeners();
-        attachWindowListeners();
+        startX = x;
+        startY = y;
+
+        detachGlobalListeners();
+        attachGlobalListeners();
 
         clearHoldTimer();
         holdTimer = setTimeout(() => {
@@ -2717,8 +2762,17 @@ function enableRoomDragAndDrop(roomEl, roomId) {
             isDragging = true;
             isAnyRoomDragging = true;
             suppressClick = true;
+            lockListScroll();
             roomEl.classList.add('dragging');
         }, 200);
+    };
+
+    roomEl.addEventListener('pointerdown', beginHold);
+
+    roomEl.addEventListener('contextmenu', (e) => {
+        if (isDragging || holdTimer) {
+            e.preventDefault();
+        }
     });
 
     roomEl.addEventListener('click', (e) => {
@@ -4123,8 +4177,7 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('touchstart', (e) => {
     if (window.innerWidth <= 768) {
         if (e.target.closest('.sidebar') || e.target.closest('.sidebar-overlay')) {
-            e.stopPropagation();
-            
+            // Не блокируем всплытие/обработку тача внутри сайдбара
         }
     }
 }, true);
