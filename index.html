@@ -2027,16 +2027,20 @@ function attachMenuLastMessageListener(roomId) {
 
     const query = db.ref(`rooms/${roomId}/messages`).orderByChild('ts').limitToLast(1);
 
-    const applySnapshot = async (snapshot) => {
-        let lastMsg = null;
-        if (snapshot && snapshot.exists()) {
-            snapshot.forEach((childSnap) => {
-                lastMsg = childSnap.val();
-            });
-        }
+const applySnapshot = async (snapshot) => {
+        try {
+            let lastMsg = null;
+            if (snapshot && snapshot.exists()) {
+                snapshot.forEach((childSnap) => {
+                    lastMsg = childSnap.val();
+                });
+            }
 
-        renderMenuLastMessageBadge(roomId, lastMsg);
-        await updateMenuLastMessagePreview(roomId, lastMsg);
+            renderMenuLastMessageBadge(roomId, lastMsg);
+            await updateMenuLastMessagePreview(roomId, lastMsg);
+        } catch (err) {
+            //console.warn(`[MENU-SNAPSHOT ${roomId}]`, err);
+        }
     };
 
     const onValue = (snapshot) => {
