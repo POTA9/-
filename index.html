@@ -1645,6 +1645,7 @@ function updateTabTitleIndicator() {
 
 function clearTabTitleIndicator() {
     unreadNotificationsCount = 0;
+    activeAlertedMessageKeys.clear();
     updateTabTitleIndicator();
 }
 
@@ -1678,6 +1679,7 @@ function triggerIncomingAlert(roomId, msgKey, msg, isLiveEvent = false) {
     if (!isOtherRoom && !isTabHidden) return;
 
     notifiedMessageKeys.add(msgKey);
+    activeAlertedMessageKeys.add(msgKey);
     unreadNotificationsCount += 1;
     updateTabTitleIndicator();
 
@@ -1703,8 +1705,21 @@ function triggerIncomingAlert(roomId, msgKey, msg, isLiveEvent = false) {
     }
 }
 
+const activeAlertedMessageKeys = new Set();
+
+function revokeIncomingAlert(msgKey) {
+    if (!msgKey || !activeAlertedMessageKeys.has(msgKey)) return;
+
+    activeAlertedMessageKeys.delete(msgKey);
+    unreadNotificationsCount = Math.max(0, unreadNotificationsCount - 1);
+    updateTabTitleIndicator();
+}
+
+
 const knownLastMessageKeyByRoom = new Map();
 const latestSeenTsByRoom = new Map();
+
+
 
 function attachBackgroundAlertListener(roomId) {
     detachBackgroundAlertListener(roomId);
@@ -1733,21 +1748,44 @@ function attachBackgroundAlertListener(roomId) {
         if (knownLastMessageKeyByRoom.get(roomId) === msgKey) return;
         knownLastMessageKeyByRoom.set(roomId, msgKey);
 
-        // Если сообщение старее или равно уже известному (например, сдвинулось после удаления) — не уведомляем
         if (msgTs <= prevMaxTs) return;
 
         latestSeenTsByRoom.set(roomId, msgTs);
         triggerIncomingAlert(roomId, msgKey, msg, true);
     };
 
+    const onChildChanged = (snap) => {
+        if (!snap || !snap.key) return;
+        const val = snap.val();
+        if (!val || val.deleted) {
+            revokeIncomingAlert(snap.key);
+        }
+    };
+
+    const onChildRemoved = (snap) => {
+        if (snap && snap.key) {
+            revokeIncomingAlert(snap.key);
+        }
+    };
+
     query.on('child_added', onChildAdded);
-    backgroundAlertListeners.set(roomId, { query, onChildAdded });
+    query.on('child_changed', onChildChanged);
+    query.on('child_removed', onChildRemoved);
+
+    backgroundAlertListeners.set(roomId, {
+        query,
+        onChildAdded,
+        onChildChanged,
+        onChildRemoved
+    });
 }
 
 function detachBackgroundAlertListener(roomId) {
     const entry = backgroundAlertListeners.get(roomId);
     if (entry) {
         entry.query.off('child_added', entry.onChildAdded);
+        if (entry.onChildChanged) entry.query.off('child_changed', entry.onChildChanged);
+        if (entry.onChildRemoved) entry.query.off('child_removed', entry.onChildRemoved);
         backgroundAlertListeners.delete(roomId);
     }
 }
@@ -3137,7 +3175,8 @@ function setupMessagesListener(roomId, key) {
             }
         }
 
-        if (msg && msg.deleted) {
+if (msg && msg.deleted) {
+            revokeIncomingAlert(snapshot.key);
             const messageElement = document.querySelector(`[data-message-id="${snapshot.key}"]`);
             if (messageElement) {
                 messageElement.closest('.message-wrapper').remove();
@@ -3145,7 +3184,10 @@ function setupMessagesListener(roomId, key) {
         }
     };
 
-    messagesRemovedHandler = () => {
+    messagesRemovedHandler = (snapshot) => {
+        if (snapshot && snapshot.key) {
+            revokeIncomingAlert(snapshot.key);
+        }
         updateRoomMessageIndicators(roomId);
     };
 
