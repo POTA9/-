@@ -1477,6 +1477,28 @@ html, body {
         font-size: 0.85em;
     }
 }
+
+.room-item {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.room-item.dragging {
+    opacity: 0.65;
+    transform: scale(0.98);
+    border-color: var(--accent);
+    background: rgba(93, 78, 240, 0.22);
+    z-index: 20;
+    touch-action: none;
+}
+
+.room-item.drag-over-top {
+    border-top: 2px solid var(--accent);
+}
+
+.room-item.drag-over-bottom {
+    border-bottom: 2px solid var(--accent);
+}
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -2527,6 +2549,152 @@ async function checkAllRoomsSize() {
                 return JSON.parse(localStorage.getItem('e2ee_rooms') || '{}');
             }
 
+function saveRoomsOrderFromDOM() {
+    const saved = loadSavedRooms();
+    const items = [...roomsListEl.querySelectorAll('.room-item')];
+
+    items.forEach((el, index) => {
+        const rId = el.dataset.roomId;
+        if (saved[rId]) {
+            saved[rId].order = index;
+        }
+    });
+
+    localStorage.setItem('e2ee_rooms', JSON.stringify(saved));
+}
+
+function enableRoomDragAndDrop(roomEl, roomId) {
+    let holdTimer = null;
+    let isDragging = false;
+    let suppressClick = false;
+    let startX = 0;
+    let startY = 0;
+    let activePointerId = null;
+
+    const clearHoldTimer = () => {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+    };
+
+    const cleanupDragVisuals = () => {
+        roomEl.classList.remove('dragging');
+        roomsListEl.querySelectorAll('.room-item').forEach((el) => {
+            el.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+    };
+
+    const moveRoomByPointerY = (clientY) => {
+        const siblings = [...roomsListEl.querySelectorAll('.room-item')].filter((el) => el !== roomEl);
+        siblings.forEach((el) => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+
+        if (siblings.length === 0) return;
+
+        let closestEl = null;
+        let closestDistance = Infinity;
+
+        for (const el of siblings) {
+            const rect = el.getBoundingClientRect();
+            const centerY = rect.top + rect.height / 2;
+            const dist = Math.abs(clientY - centerY);
+            if (dist < closestDistance) {
+                closestDistance = dist;
+                closestEl = el;
+            }
+        }
+
+        if (!closestEl) return;
+
+        const rect = closestEl.getBoundingClientRect();
+        const insertBefore = clientY < rect.top + rect.height / 2;
+        closestEl.classList.add(insertBefore ? 'drag-over-top' : 'drag-over-bottom');
+
+        if (insertBefore) {
+            if (roomEl.nextElementSibling !== closestEl) {
+                roomsListEl.insertBefore(roomEl, closestEl);
+            }
+        } else {
+            if (closestEl.nextElementSibling !== roomEl) {
+                roomsListEl.insertBefore(roomEl, closestEl.nextElementSibling);
+            }
+        }
+    };
+
+    roomEl.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('.room-action-btn')) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+        startX = e.clientX;
+        startY = e.clientY;
+        activePointerId = e.pointerId;
+
+        clearHoldTimer();
+        holdTimer = setTimeout(() => {
+            isDragging = true;
+            suppressClick = true;
+            roomEl.classList.add('dragging');
+            try {
+                roomEl.setPointerCapture(activePointerId);
+            } catch (_) {}
+        }, 220);
+    });
+
+    roomEl.addEventListener('pointermove', (e) => {
+        if (!isDragging) {
+            if (holdTimer && (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10)) {
+                clearHoldTimer();
+            }
+            return;
+        }
+
+        e.preventDefault();
+        moveRoomByPointerY(e.clientY);
+    });
+
+    const finishPointer = (e) => {
+        clearHoldTimer();
+
+        if (!isDragging) {
+            activePointerId = null;
+            return;
+        }
+
+        if (typeof e.clientY === 'number') {
+            moveRoomByPointerY(e.clientY);
+        }
+
+        isDragging = false;
+        cleanupDragVisuals();
+
+        if (activePointerId !== null) {
+            try {
+                if (roomEl.hasPointerCapture(activePointerId)) {
+                    roomEl.releasePointerCapture(activePointerId);
+                }
+            } catch (_) {}
+            activePointerId = null;
+        }
+
+        saveRoomsOrderFromDOM();
+
+        setTimeout(() => {
+            suppressClick = false;
+        }, 80);
+    };
+
+    roomEl.addEventListener('pointerup', finishPointer);
+    roomEl.addEventListener('pointercancel', finishPointer);
+
+    roomEl.addEventListener('click', (e) => {
+        if (suppressClick) {
+            e.stopPropagation();
+            e.preventDefault();
+            suppressClick = false;
+        }
+    }, true);
+}
+
             function deleteRoom(roomId) {
 detachMenuLastMessageListener(roomId);
 detachBackgroundAlertListener(roomId);
@@ -2803,6 +2971,7 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
     roomEl.dataset.roomId = roomId;
     
     const avatarColor = getAvatarColor(name || roomId);
+
     
     roomEl.innerHTML = `
         <div class="room-avatar" data-color="${avatarColor}" style="position: relative;">
@@ -2855,7 +3024,7 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
     });
     
     roomsListEl.appendChild(roomEl);
-    
+    enableRoomDragAndDrop(roomEl, roomId);
     // Обновляем индикаторы для этой комнаты
     attachMenuLastMessageListener(roomId)
 }
@@ -3803,8 +3972,15 @@ async function initialize() {
         // Загружаем сохраненные комнаты
         const savedRooms = loadSavedRooms();
         
-        // Добавляем комнаты в интерфейс
-        for (const [roomId, data] of Object.entries(savedRooms)) {
+// Добавляем комнаты в интерфейс с учётом сохранённого порядка
+        const sortedRooms = Object.entries(savedRooms).sort((a, b) => {
+            const orderA = typeof a[1].order === 'number' ? a[1].order : Number.MAX_SAFE_INTEGER;
+            const orderB = typeof b[1].order === 'number' ? b[1].order : Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) return orderA - orderB;
+            return (b[1].lastAccessed || 0) - (a[1].lastAccessed || 0);
+        });
+
+        for (const [roomId, data] of sortedRooms) {
             addRoomToUI(roomId, data.keyBase64, data.name, 'Сохранено', data.lastAccessed);
         }
         for (const roomId of rooms.keys()) {
