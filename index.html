@@ -2166,13 +2166,14 @@ function handleTouchEnd(e) {
             sidebarOverlay.addEventListener('click', closeSidebar);
 
             // Закрыть меню при выборе чата (на мобильных)
-            document.addEventListener('click', (e) => {
-                if (window.innerWidth <= 768) {
-                    if (e.target.closest('.room-item') && !e.target.closest('.room-action-btn')) {
-                        closeSidebar();
-                    }
-               }
-            });
+document.addEventListener('click', (e) => {
+    if (justFinishedRoomDrag) return;
+    if (window.innerWidth <= 768) {
+        if (e.target.closest('.room-item') && !e.target.closest('.room-action-btn')) {
+            closeSidebar();
+        }
+    }
+});
 
             // Generate unique user ID
             function generateUserId() {
@@ -2573,6 +2574,7 @@ function saveRoomsOrderFromDOM() {
 }
 
 let isAnyRoomDragging = false;
+let justFinishedRoomDrag = false;
 
 function enableRoomDragAndDrop(roomEl, roomId) {
     let holdTimer = null;
@@ -2713,12 +2715,14 @@ function enableRoomDragAndDrop(roomEl, roomId) {
 
         isDragging = false;
         isAnyRoomDragging = false;
+        justFinishedRoomDrag = true;
         cleanupDragVisuals();
         saveRoomsOrderFromDOM();
 
-        setTimeout(() => {
+    setTimeout(() => {
             suppressClick = false;
-        }, 120);
+            justFinishedRoomDrag = false;
+        }, 250);
     };
 
     function attachGlobalListeners() {
@@ -3089,7 +3093,12 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
   
     
     // Добавляем обработчики событий
-    roomEl.addEventListener('click', (e) => {
+roomEl.addEventListener('click', (e) => {
+        if (justFinishedRoomDrag) {
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+        }
         if (!e.target.closest('.room-action-btn')) {
             switchRoom(roomId);
         }
