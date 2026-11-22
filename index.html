@@ -1665,10 +1665,12 @@ function triggerIncomingAlert(roomId, msgKey, msg, isLiveEvent = false) {
     if (!msg || msg.from === userId || msg.deleted) return;
     if (notifiedMessageKeys.has(msgKey)) return;
 
-    if (!isLiveEvent) {
-        const msgTime = msg.ts || 0;
-        if (msgTime < appStartTimestamp - 2000) return;
-    }
+    const msgTime = msg.ts || 0;
+    // Не реагируем на старые сообщения, даже если они прилетели при переподключении
+    if (msgTime < appStartTimestamp - 3000) return;
+
+    // Если это не живое событие, а фоновая/историческая подтяжка — пропускаем
+    if (!isLiveEvent) return;
 
     const isOtherRoom = roomId !== currentRoomId;
     const isTabHidden = document.hidden === true;
@@ -3066,22 +3068,17 @@ async function loadMessages(roomId, key, loadMore = false) {
 }
 
 function setupMessagesListener(roomId, key) {
-
-    
     detachCurrentMessagesListener();
     messagesRef = db.ref(`rooms/${roomId}/messages`);
+    const listenerStartedAt = Date.now();
 
     messagesAddedHandler = async (snapshot) => {
-
-        
         if (!snapshot || !snapshot.exists()) return;
 
         const msg = snapshot.val();
         if (!msg || !msg.data || msg.deleted) return;
-        triggerIncomingAlert(roomId, snapshot.key, msg, true);
+
         const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
-        
-        //attachBackgroundAlertListener(roomId);
         if (existingMessage) return;
 
         const isOwn = msg.from === userId;
@@ -3089,6 +3086,10 @@ function setupMessagesListener(roomId, key) {
 
         if (!currentLastTimestamp || msg.ts > currentLastTimestamp) {
             addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from, msg);
+
+            if (!isOwn && (msg.ts || 0) >= listenerStartedAt - 2000) {
+                triggerIncomingAlert(roomId, snapshot.key, msg, true);
+            }
         } else {
             return;
         }
@@ -3116,7 +3117,7 @@ function setupMessagesListener(roomId, key) {
 
         if (loadMoreButton && messagesContainer.scrollTop > 100) {
             loadMoreButton.style.display = 'none';
-        }   
+        }
     };
 
     messagesChangedHandler = (snapshot) => {
