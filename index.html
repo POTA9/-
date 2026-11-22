@@ -1481,15 +1481,18 @@ html, body {
 .room-item {
     user-select: none;
     -webkit-user-select: none;
+    touch-action: pan-y;
 }
 
 .room-item.dragging {
-    opacity: 0.65;
-    transform: scale(0.98);
+    opacity: 0.85;
+    transform: scale(0.99);
     border-color: var(--accent);
-    background: rgba(93, 78, 240, 0.22);
-    z-index: 20;
+    background: rgba(93, 78, 240, 0.24);
+    z-index: 30;
     touch-action: none;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+    transition: none;
 }
 
 .room-item.drag-over-top {
@@ -2118,32 +2121,37 @@ function updateRoomMessageIndicators(roomId) {
             }
 
             // ПРОСТЫЕ И РАБОЧИЕ обработчики свайпа
-            function handleTouchStart(e) {
-                touchStartX = e.touches[0].clientX;
-            }
+           function handleTouchStart(e) {
+    if (isAnyRoomDragging) return;
+    touchStartX = e.touches[0].clientX;
+}
 
-            function handleTouchMove(e) {
-                touchEndX = e.touches[0].clientX;
-            }
+function handleTouchMove(e) {
+    if (isAnyRoomDragging || document.querySelector('.room-item.dragging')) return;
+    touchEndX = e.touches[0].clientX;
+}
 
-            function handleTouchEnd(e) {
-                if (window.innerWidth > 768) return; // Только на мобильных
-                
-                const swipeDistance = touchEndX - touchStartX;
-                
-                // Свайп вправо для открытия
-                if (swipeDistance > minSwipeDistance && !sidebar.classList.contains('open')) {
-                    openSidebar();
-                }
-                
-                // Свайп влево для закрытия
-                if (swipeDistance < -minSwipeDistance && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-                
-                touchStartX = 0;
-                touchEndX = 0;
-            }
+function handleTouchEnd(e) {
+    if (isAnyRoomDragging) {
+        touchStartX = 0;
+        touchEndX = 0;
+        return;
+    }
+    if (window.innerWidth > 768) return;
+
+    const swipeDistance = touchEndX - touchStartX;
+
+    if (swipeDistance > minSwipeDistance && !sidebar.classList.contains('open')) {
+        openSidebar();
+    }
+
+    if (swipeDistance < -minSwipeDistance && sidebar.classList.contains('open')) {
+        closeSidebar();
+    }
+
+    touchStartX = 0;
+    touchEndX = 0;
+}
 
             // Добавляем обработчики событий
             document.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -2563,13 +2571,18 @@ function saveRoomsOrderFromDOM() {
     localStorage.setItem('e2ee_rooms', JSON.stringify(saved));
 }
 
+let isAnyRoomDragging = false;
+
 function enableRoomDragAndDrop(roomEl, roomId) {
     let holdTimer = null;
     let isDragging = false;
     let suppressClick = false;
     let startX = 0;
     let startY = 0;
-    let activePointerId = null;
+    let initialLayoutTop = 0;
+    let currentLayoutTop = 0;
+    let currentTranslateY = 0;
+    let lastSwapTime = 0;
 
     const clearHoldTimer = () => {
         if (holdTimer) {
@@ -2580,46 +2593,109 @@ function enableRoomDragAndDrop(roomEl, roomId) {
 
     const cleanupDragVisuals = () => {
         roomEl.classList.remove('dragging');
+        roomEl.style.transform = '';
+        currentTranslateY = 0;
         roomsListEl.querySelectorAll('.room-item').forEach((el) => {
             el.classList.remove('drag-over-top', 'drag-over-bottom');
         });
     };
 
-    const moveRoomByPointerY = (clientY) => {
+    const applyVisualTransform = (clientY) => {
+        const desiredVisualTop = initialLayoutTop + (clientY - startY);
+        currentTranslateY = desiredVisualTop - currentLayoutTop;
+        roomEl.style.transform = `translateY(${currentTranslateY}px) scale(0.99)`;
+    };
+
+    const syncLayoutTopAfterReorder = (clientY) => {
+        // Текущий rect.top включает старый currentTranslateY, поэтому вычитаем его,
+        // чтобы получить чистую позицию карточки в потоке после вставки
+        const rectTopWithOldTransform = roomEl.getBoundingClientRect().top;
+        currentLayoutTop = rectTopWithOldTransform - currentTranslateY;
+        applyVisualTransform(clientY);
+    };
+
+    const tryReorderAtY = (clientY) => {
+        const now = Date.now();
+        if (now - lastSwapTime < 90) return;
+
         const siblings = [...roomsListEl.querySelectorAll('.room-item')].filter((el) => el !== roomEl);
         siblings.forEach((el) => el.classList.remove('drag-over-top', 'drag-over-bottom'));
-
-        if (siblings.length === 0) return;
-
-        let closestEl = null;
-        let closestDistance = Infinity;
 
         for (const el of siblings) {
             const rect = el.getBoundingClientRect();
             const centerY = rect.top + rect.height / 2;
-            const dist = Math.abs(clientY - centerY);
-            if (dist < closestDistance) {
-                closestDistance = dist;
-                closestEl = el;
+
+            // Тянем вверх и палец выше середины соседа — ставим перед ним
+            if (clientY < centerY && roomEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) {
+                el.classList.add('drag-over-top');
+                roomsListEl.insertBefore(roomEl, el);
+                syncLayoutTopAfterReorder(clientY);
+                lastSwapTime = now;
+                break;
             }
-        }
 
-        if (!closestEl) return;
-
-        const rect = closestEl.getBoundingClientRect();
-        const insertBefore = clientY < rect.top + rect.height / 2;
-        closestEl.classList.add(insertBefore ? 'drag-over-top' : 'drag-over-bottom');
-
-        if (insertBefore) {
-            if (roomEl.nextElementSibling !== closestEl) {
-                roomsListEl.insertBefore(roomEl, closestEl);
-            }
-        } else {
-            if (closestEl.nextElementSibling !== roomEl) {
-                roomsListEl.insertBefore(roomEl, closestEl.nextElementSibling);
+            // Тянем вниз и палец ниже середины соседа — ставим после него
+            if (clientY > centerY && roomEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                el.classList.add('drag-over-bottom');
+                roomsListEl.insertBefore(roomEl, el.nextSibling);
+                syncLayoutTopAfterReorder(clientY);
+                lastSwapTime = now;
+                break;
             }
         }
     };
+
+    const onWindowPointerMove = (e) => {
+        if (!isDragging) {
+            if (holdTimer && (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10)) {
+                clearHoldTimer();
+                detachWindowListeners();
+            }
+            return;
+        }
+
+        if (e.cancelable) {
+            e.preventDefault();
+        }
+
+        applyVisualTransform(e.clientY);
+        tryReorderAtY(e.clientY);
+    };
+
+    const onWindowPointerUp = (e) => {
+        clearHoldTimer();
+        detachWindowListeners();
+
+        if (!isDragging) {
+            isAnyRoomDragging = false;
+            return;
+        }
+
+        if (typeof e.clientY === 'number') {
+            tryReorderAtY(e.clientY);
+        }
+
+        isDragging = false;
+        isAnyRoomDragging = false;
+        cleanupDragVisuals();
+        saveRoomsOrderFromDOM();
+
+        setTimeout(() => {
+            suppressClick = false;
+        }, 100);
+    };
+
+    function attachWindowListeners() {
+        window.addEventListener('pointermove', onWindowPointerMove, { passive: false });
+        window.addEventListener('pointerup', onWindowPointerUp);
+        window.addEventListener('pointercancel', onWindowPointerUp);
+    }
+
+    function detachWindowListeners() {
+        window.removeEventListener('pointermove', onWindowPointerMove);
+        window.removeEventListener('pointerup', onWindowPointerUp);
+        window.removeEventListener('pointercancel', onWindowPointerUp);
+    }
 
     roomEl.addEventListener('pointerdown', (e) => {
         if (e.target.closest('.room-action-btn')) return;
@@ -2627,64 +2703,23 @@ function enableRoomDragAndDrop(roomEl, roomId) {
 
         startX = e.clientX;
         startY = e.clientY;
-        activePointerId = e.pointerId;
+
+        detachWindowListeners();
+        attachWindowListeners();
 
         clearHoldTimer();
         holdTimer = setTimeout(() => {
+            const rect = roomEl.getBoundingClientRect();
+            initialLayoutTop = rect.top;
+            currentLayoutTop = rect.top;
+            currentTranslateY = 0;
+
             isDragging = true;
+            isAnyRoomDragging = true;
             suppressClick = true;
             roomEl.classList.add('dragging');
-            try {
-                roomEl.setPointerCapture(activePointerId);
-            } catch (_) {}
-        }, 220);
+        }, 200);
     });
-
-    roomEl.addEventListener('pointermove', (e) => {
-        if (!isDragging) {
-            if (holdTimer && (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10)) {
-                clearHoldTimer();
-            }
-            return;
-        }
-
-        e.preventDefault();
-        moveRoomByPointerY(e.clientY);
-    });
-
-    const finishPointer = (e) => {
-        clearHoldTimer();
-
-        if (!isDragging) {
-            activePointerId = null;
-            return;
-        }
-
-        if (typeof e.clientY === 'number') {
-            moveRoomByPointerY(e.clientY);
-        }
-
-        isDragging = false;
-        cleanupDragVisuals();
-
-        if (activePointerId !== null) {
-            try {
-                if (roomEl.hasPointerCapture(activePointerId)) {
-                    roomEl.releasePointerCapture(activePointerId);
-                }
-            } catch (_) {}
-            activePointerId = null;
-        }
-
-        saveRoomsOrderFromDOM();
-
-        setTimeout(() => {
-            suppressClick = false;
-        }, 80);
-    };
-
-    roomEl.addEventListener('pointerup', finishPointer);
-    roomEl.addEventListener('pointercancel', finishPointer);
 
     roomEl.addEventListener('click', (e) => {
         if (suppressClick) {
@@ -2694,7 +2729,6 @@ function enableRoomDragAndDrop(roomEl, roomId) {
         }
     }, true);
 }
-
             function deleteRoom(roomId) {
 detachMenuLastMessageListener(roomId);
 detachBackgroundAlertListener(roomId);
