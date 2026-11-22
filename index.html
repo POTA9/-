@@ -2109,12 +2109,40 @@ function updateRoomMessageIndicators(roomId) {
                 }
             }
 
-function closeSidebar() {
-    if (isAnyRoomDragging || justFinishedRoomDrag) return;
+            function closeSidebarNow() {
     if (window.innerWidth <= 768) {
         sidebar.classList.remove('open');
         sidebarOverlay.classList.remove('active');
         document.body.style.overflow = '';
+    }
+}
+
+function openSidebar() {
+    if (window.innerWidth <= 768) {
+        sidebar.classList.add('open');
+        sidebarOverlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeSidebarNow() {
+    if (window.innerWidth <= 768) {
+        sidebar.classList.remove('open');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function closeSidebar() {
+    if (isAnyRoomDragging || justFinishedRoomDrag) return;
+    closeSidebarNow();
+}
+
+function toggleSidebar() {
+    if (sidebar.classList.contains('open')) {
+        closeSidebarNow();
+    } else {
+        openSidebar();
     }
 }
 
@@ -2127,18 +2155,19 @@ function closeSidebar() {
             }
 
             // ПРОСТЫЕ И РАБОЧИЕ обработчики свайпа
-           function handleTouchStart(e) {
-    if (isAnyRoomDragging) return;
+function handleTouchStart(e) {
+    if (isAnyRoomDragging || !e.touches || !e.touches[0]) return;
     touchStartX = e.touches[0].clientX;
+    touchEndX = e.touches[0].clientX;
 }
 
 function handleTouchMove(e) {
-    if (isAnyRoomDragging || document.querySelector('.room-item.dragging')) return;
+    if (isAnyRoomDragging || document.querySelector('.room-item.dragging') || !e.touches || !e.touches[0]) return;
     touchEndX = e.touches[0].clientX;
 }
 
 function handleTouchEnd(e) {
-    if (isAnyRoomDragging) {
+    if (isAnyRoomDragging || justFinishedRoomDrag) {
         touchStartX = 0;
         touchEndX = 0;
         return;
@@ -2149,33 +2178,26 @@ function handleTouchEnd(e) {
 
     if (swipeDistance > minSwipeDistance && !sidebar.classList.contains('open')) {
         openSidebar();
-    }
-
-    if (swipeDistance < -minSwipeDistance && sidebar.classList.contains('open')) {
-        closeSidebar();
+    } else if (swipeDistance < -minSwipeDistance && sidebar.classList.contains('open')) {
+        closeSidebarNow();
     }
 
     touchStartX = 0;
     touchEndX = 0;
 }
 
-            // Добавляем обработчики событий
-            document.addEventListener('touchstart', handleTouchStart, { passive: true });
-            document.addEventListener('touchmove', handleTouchMove, { passive: true });
-            document.addEventListener('touchend', handleTouchEnd);
+document.addEventListener('touchstart', handleTouchStart, { passive: true });
+document.addEventListener('touchmove', handleTouchMove, { passive: true });
+document.addEventListener('touchend', handleTouchEnd);
 
-            // Mobile menu toggle
-           menuToggle.addEventListener('click', toggleSidebar);
-
-            // Закрыть меню при клике на оверлей
-            sidebarOverlay.addEventListener('click', closeSidebar);
-
+menuToggle.addEventListener('click', toggleSidebar);
+sidebarOverlay.addEventListener('click', closeSidebarNow);
             // Закрыть меню при выборе чата (на мобильных)
 document.addEventListener('click', (e) => {
     if (isAnyRoomDragging || justFinishedRoomDrag) return;
     if (window.innerWidth <= 768) {
         if (e.target.closest('.room-item') && !e.target.closest('.room-action-btn')) {
-            closeSidebar();
+         
         }
     }
 });
@@ -3114,6 +3136,7 @@ roomEl.addEventListener('click', (e) => {
         }
         if (!e.target.closest('.room-action-btn')) {
             switchRoom(roomId);
+            closeSidebarNow();
         }
     });
     
@@ -3836,7 +3859,7 @@ function setupRoomPresence(roomId) {
                     
                     await db.ref(`rooms/${roomId}/messages`).set({});
                     await switchRoom(roomId);
-                    
+                    closeSidebarNow();
                     // Copy key to clipboard
                     copyToClipboard(`${roomId}:${keyBase64}`);
                 } catch (error) {
@@ -3881,6 +3904,7 @@ function setupRoomPresence(roomId) {
                     
                     await switchRoom(roomId);
                     joinKeyInput.value = '';
+                    closeSidebarNow();
                 } catch (error) {
                     console.error('Join error:', error);
                     showStatus('Неверный ключ шифрования', true);
@@ -4187,14 +4211,7 @@ ensureAllRoomMenuListeners()
                 }
             });
 // ПОЛНОСТЬЮ БЛОКИРУЕМ ЗАКРЫТИЕ МЕНЮ ПРИ КЛИКАХ
-document.addEventListener('mousedown', (e) => {
-    if (window.innerWidth <= 768) {
-        if (e.target.closest('.sidebar') || e.target.closest('.sidebar-overlay')) {
-            e.stopPropagation();
-           
-        }
-    }
-}, true);
+
 
 document.addEventListener('touchstart', (e) => {
     if (window.innerWidth <= 768) {
@@ -4204,11 +4221,13 @@ document.addEventListener('touchstart', (e) => {
     }
 }, true);
             // Handle resize
-            window.addEventListener('resize', () => {
-                if (window.innerWidth > 768) {
-                    closeSidebar();
-               }
-            });
+window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) {
+        sidebar.classList.remove('open');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+});
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
         clearTabTitleIndicator();
