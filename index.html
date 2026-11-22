@@ -1746,44 +1746,101 @@ function renderMenuLastMessageBadge(roomId, msg) {
     avatar.appendChild(badge);
 }
 
-function attachMenuLastMessageListener(roomId) {
-    if (!rooms.has(roomId)) {
-        
+function formatMenuTime(ts) {
+    if (!ts) return '';
+    const date = new Date(ts);
+    const now = new Date();
+
+    const timeStr = date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+
+    const isToday =
+        date.getDate() === now.getDate() &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear();
+
+    if (isToday) {
+        return timeStr; // Например: 22:30
+    }
+
+    const dateStr = date.toLocaleDateString([], {
+        day: '2-digit',
+        month: '2-digit'
+    });
+
+    return `${dateStr} ${timeStr}`; // Например: 21.11 22:30
+}
+
+async function updateMenuLastMessagePreview(roomId, msg) {
+    const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
+    if (!roomItem) return;
+
+    const lastMsgEl = roomItem.querySelector('.room-last-message');
+    const timeEl = roomItem.querySelector('.room-time');
+    const room = rooms.get(roomId);
+
+    if (!msg || !msg.data || msg.deleted === true) {
+        if (lastMsgEl) lastMsgEl.textContent = 'Нет сообщений';
         return;
     }
 
+    if (timeEl && msg.ts) {
+        timeEl.textContent = formatMenuTime(msg.ts);
+    }
+
+    if (!lastMsgEl) return;
+
+    if (!room || !room.keyBase64) {
+        lastMsgEl.textContent = '🔐 Зашифровано';
+        return;
+    }
+
+    try {
+        if (!room._menuCryptoKey) {
+            room._menuCryptoKey = await importKey(room.keyBase64);
+        }
+        const decrypted = await decryptMessage(msg.data, room._menuCryptoKey);
+        const prefix = msg.from === userId ? 'Вы: ' : '';
+        const cleanText = (prefix + decrypted).replace(/\s+/g, ' ').trim();
+        lastMsgEl.textContent = cleanText.length > 32
+            ? cleanText.substring(0, 32) + '...'
+            : cleanText;
+    } catch (e) {
+        lastMsgEl.textContent = '🔐 Сообщение не может быть расшифровано';
+    }
+}
+
+function attachMenuLastMessageListener(roomId) {
+    if (!rooms.has(roomId)) return;
+
     detachMenuLastMessageListener(roomId);
 
-    const query = db.ref(`rooms/${roomId}/messages`).orderByKey().limitToLast(1);
-    
+    const query = db.ref(`rooms/${roomId}/messages`).orderByChild('ts').limitToLast(1);
 
-    const applySnapshot = (eventName, snapshot) => {
+    const applySnapshot = async (snapshot) => {
         let lastMsg = null;
-        let childKey = null;
         if (snapshot && snapshot.exists()) {
             snapshot.forEach((childSnap) => {
-                childKey = childSnap.key;
                 lastMsg = childSnap.val();
             });
         }
-        
+
         renderMenuLastMessageBadge(roomId, lastMsg);
+        await updateMenuLastMessagePreview(roomId, lastMsg);
     };
 
-const onValue = (snapshot) => applySnapshot('value', snapshot);
-
-    const onChildChanged = (childSnap) => {
-        
-           
-            childSnap ? childSnap.val() : null
-       
+    const onValue = (snapshot) => {
+        applySnapshot(snapshot);
     };
 
-    const onChildRemoved = (childSnap) => {
-       
-            
-            childSnap ? childSnap.val() : null
-       
+    const onChildChanged = (snapshot) => {
+        applySnapshot(snapshot);
+    };
+
+    const onChildRemoved = () => {
+        query.once('value').then((snap) => applySnapshot(snap));
     };
 
     const onError = (error) => {
