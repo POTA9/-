@@ -1661,12 +1661,14 @@ async function ensureNotificationPermission() {
     }
 }
 
-function triggerIncomingAlert(roomId, msgKey, msg) {
+function triggerIncomingAlert(roomId, msgKey, msg, isLiveEvent = false) {
     if (!msg || msg.from === userId || msg.deleted) return;
     if (notifiedMessageKeys.has(msgKey)) return;
 
-    const msgTime = msg.ts || 0;
-    if (msgTime < appStartTimestamp - 2000) return;
+    if (!isLiveEvent) {
+        const msgTime = msg.ts || 0;
+        if (msgTime < appStartTimestamp - 2000) return;
+    }
 
     const isOtherRoom = roomId !== currentRoomId;
     const isTabHidden = document.hidden === true;
@@ -1699,14 +1701,41 @@ function triggerIncomingAlert(roomId, msgKey, msg) {
     }
 }
 
-function attachBackgroundAlertListener(roomId) {
-    if (!rooms.has(roomId) || backgroundAlertListeners.has(roomId)) return;
+const knownLastMessageKeyByRoom = new Map();
+const latestSeenTsByRoom = new Map();
 
-    
+function attachBackgroundAlertListener(roomId) {
+    detachBackgroundAlertListener(roomId);
+
     const query = db.ref(`rooms/${roomId}/messages`).orderByKey().limitToLast(1);
+    let isInitialSnapshot = true;
+
     const onChildAdded = (snap) => {
         if (!snap || !snap.exists()) return;
-        triggerIncomingAlert(roomId, snap.key, snap.val());
+        const msgKey = snap.key;
+        const msg = snap.val();
+        if (!msg || msg.deleted) return;
+
+        const msgTs = msg.ts || 0;
+        const prevMaxTs = latestSeenTsByRoom.get(roomId) || 0;
+
+        if (isInitialSnapshot) {
+            isInitialSnapshot = false;
+            knownLastMessageKeyByRoom.set(roomId, msgKey);
+            if (msgTs > prevMaxTs) {
+                latestSeenTsByRoom.set(roomId, msgTs);
+            }
+            return;
+        }
+
+        if (knownLastMessageKeyByRoom.get(roomId) === msgKey) return;
+        knownLastMessageKeyByRoom.set(roomId, msgKey);
+
+        // Если сообщение старее или равно уже известному (например, сдвинулось после удаления) — не уведомляем
+        if (msgTs <= prevMaxTs) return;
+
+        latestSeenTsByRoom.set(roomId, msgTs);
+        triggerIncomingAlert(roomId, msgKey, msg, true);
     };
 
     query.on('child_added', onChildAdded);
@@ -2461,6 +2490,8 @@ async function checkAllRoomsSize() {
             function deleteRoom(roomId) {
 detachMenuLastMessageListener(roomId);
 detachBackgroundAlertListener(roomId);
+knownLastMessageKeyByRoom.delete(roomId);
+latestSeenTsByRoom.delete(roomId);
 
                   if (roomId) {
         db.ref(`rooms/${roomId}/presence/${userId}`).remove()
@@ -3035,17 +3066,22 @@ async function loadMessages(roomId, key, loadMore = false) {
 }
 
 function setupMessagesListener(roomId, key) {
+
+    
     detachCurrentMessagesListener();
     messagesRef = db.ref(`rooms/${roomId}/messages`);
 
     messagesAddedHandler = async (snapshot) => {
+
+        
         if (!snapshot || !snapshot.exists()) return;
 
         const msg = snapshot.val();
         if (!msg || !msg.data || msg.deleted) return;
-
+        triggerIncomingAlert(roomId, snapshot.key, msg, true);
         const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
-        attachBackgroundAlertListener(roomId);
+        
+        //attachBackgroundAlertListener(roomId);
         if (existingMessage) return;
 
         const isOwn = msg.from === userId;
@@ -3728,7 +3764,9 @@ async function initialize() {
         for (const [roomId, data] of Object.entries(savedRooms)) {
             addRoomToUI(roomId, data.keyBase64, data.name, 'Сохранено', data.lastAccessed);
         }
-        
+        for (const roomId of rooms.keys()) {
+            attachBackgroundAlertListener(roomId);
+        }
         // Переключаемся на последнюю использованную комнату
         if (Object.keys(savedRooms).length > 0) {
             const lastRoom = Object.entries(savedRooms)
