@@ -2122,10 +2122,9 @@ function updateRoomMessageIndicators(roomId) {
                 touchStartX = e.touches[0].clientX;
             }
 
-function handleTouchMove(e) {
-    if (document.querySelector('.room-item.dragging')) return;
-    touchEndX = e.touches[0].clientX;
-}
+            function handleTouchMove(e) {
+                touchEndX = e.touches[0].clientX;
+            }
 
             function handleTouchEnd(e) {
                 if (window.innerWidth > 768) return; // Только на мобильных
