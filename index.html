@@ -1417,7 +1417,7 @@ html, body {
 .message-indicator.my-pending {
     background: var(--warning);
     color: #000;
-    left: -4px;
+    right: -4px;
 }
 .message-indicator.other-pending {
     background: var(--accent);
@@ -1605,6 +1605,23 @@ html, body {
 // Состояние для ответа на сообщение
 let replyToMessage = null; // { id, text, from, authorName }
 let roomsState = new Map();
+let menuLastMsgListeners = new Map();
+
+let messagesAddedHandler = null;
+let messagesChangedHandler = null;
+let messagesRemovedHandler = null;
+
+function detachCurrentMessagesListener() {
+    if (!messagesRef) return;
+    if (messagesAddedHandler) messagesRef.off('child_added', messagesAddedHandler);
+    if (messagesChangedHandler) messagesRef.off('child_changed', messagesChangedHandler);
+    if (messagesRemovedHandler) messagesRef.off('child_removed', messagesRemovedHandler);
+    messagesAddedHandler = null;
+    messagesChangedHandler = null;
+    messagesRemovedHandler = null;
+    currentMessagesListener = null;
+}
+
 // Добавьте эти переменные в начало скрипта, после других let переменных
 let currentLastTimestamp = null; // Для хранения временной метки последнего загруженного сообщения
 let isLoadingMore = false; // Флаг загрузки
@@ -1694,54 +1711,124 @@ function showLoadMoreButton() {
     }
 }
 
-            function updateRoomMessageIndicators(roomId) {
+function renderMenuLastMessageBadge(roomId, msg) {
     const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
-    if (!roomItem) return;
-    
-    const avatar = roomItem.querySelector('.room-avatar');
-    
-    // Удаляем старые индикаторы сообщений
-    const oldIndicators = avatar.querySelectorAll('.message-indicator');
-    oldIndicators.forEach(el => el.remove());
-    
-    // Получаем статистику сообщений для комнаты
-    db.ref(`rooms/${roomId}/messages`).once('value', (snapshot) => {
-        if (!snapshot.exists()) return;
+    const avatar = roomItem ? roomItem.querySelector('.room-avatar') : null;
+
+
+
+    if (!roomItem || !avatar) return;
+
+    avatar.querySelectorAll('.message-indicator').forEach(el => el.remove());
+
+    if (!msg || msg.deleted === true || msg.delivered !== false) {
+      
+        return;
+    }
+
+    const badge = document.createElement('span');
+
+    if (msg.from === userId) {
+        badge.className = 'message-indicator my-pending';
+        badge.setAttribute('data-side', 'left');
+        badge.title = 'Последнее ваше сообщение не доставлено';
+        badge.innerHTML = '<i class="fas fa-clock" style="font-size: 8px;"></i>';
+       
+    } else {
+        badge.className = 'message-indicator other-pending';
+        badge.setAttribute('data-side', 'right');
+        badge.title = 'Последнее сообщение от собеседника не доставлено';
+        badge.innerHTML = '<i class="fas fa-lock" style="font-size: 8px;"></i>';
         
-        let myPendingCount = 0;
-        let otherPendingCount = 0;
+    }
+
+    avatar.appendChild(badge);
+}
+
+function attachMenuLastMessageListener(roomId) {
+    if (!rooms.has(roomId)) {
         
-        snapshot.forEach((msgSnapshot) => {
-            const msg = msgSnapshot.val();
-            if (msg && !msg.deleted && msg.delivered === false) {
-                if (msg.from === userId) {
-                    myPendingCount++;
-                } else {
-                    otherPendingCount++;
-                }
-            }
-        });
-        
-        // Добавляем индикатор для своих сообщений с часиками (слева сверху)
-        if (myPendingCount > 0) {
-            const myIndicator = document.createElement('span');
-            myIndicator.className = 'message-indicator my-pending';
-            myIndicator.setAttribute('data-side', 'left');
-            myIndicator.title = `${myPendingCount} ваших сообщений ожидают доставки`;
-            myIndicator.innerHTML = '<i class="fas fa-clock" style="font-size: 8px;"></i>';
-            avatar.appendChild(myIndicator);
+        return;
+    }
+
+    detachMenuLastMessageListener(roomId);
+
+    const query = db.ref(`rooms/${roomId}/messages`).orderByKey().limitToLast(1);
+    
+
+    const applySnapshot = (eventName, snapshot) => {
+        let lastMsg = null;
+        let childKey = null;
+        if (snapshot && snapshot.exists()) {
+            snapshot.forEach((childSnap) => {
+                childKey = childSnap.key;
+                lastMsg = childSnap.val();
+            });
         }
         
-        // Добавляем индикатор для чужих сообщений с часиками (справа сверху)
-        if (otherPendingCount > 0) {
-            const otherIndicator = document.createElement('span');
-            otherIndicator.className = 'message-indicator other-pending';
-            otherIndicator.setAttribute('data-side', 'right');
-            otherIndicator.title = `${otherPendingCount} сообщений от других ожидают доставки`;
-            otherIndicator.innerHTML = '<i class="fas fa-lock" style="font-size: 8px;"></i>';
-            avatar.appendChild(otherIndicator);
+        renderMenuLastMessageBadge(roomId, lastMsg);
+    };
+
+const onValue = (snapshot) => applySnapshot('value', snapshot);
+
+    const onChildChanged = (childSnap) => {
+        
+           
+            childSnap ? childSnap.val() : null
+       
+    };
+
+    const onChildRemoved = (childSnap) => {
+       
+            
+            childSnap ? childSnap.val() : null
+       
+    };
+
+    const onError = (error) => {
+        console.error(`[MENU-ERR ${roomId}]`, error);
+    };
+
+    query.on('value', onValue, onError);
+    query.on('child_changed', onChildChanged, onError);
+    query.on('child_removed', onChildRemoved, onError);
+
+    menuLastMsgListeners.set(roomId, {
+        query,
+        onValue,
+        onChildChanged,
+        onChildRemoved
+    });
+}
+
+function detachMenuLastMessageListener(roomId) {
+    const entry = menuLastMsgListeners.get(roomId);
+    if (entry) {
+        entry.query.off('value', entry.onValue);
+        entry.query.off('child_changed', entry.onChildChanged);
+        entry.query.off('child_removed', entry.onChildRemoved);
+        menuLastMsgListeners.delete(roomId);
+    }
+}
+
+function ensureAllRoomMenuListeners() {
+    rooms.forEach((_, roomId) => {
+        if (!menuLastMsgListeners.has(roomId)) {
+            attachMenuLastMessageListener(roomId);
         }
     });
+}
+function restartAllRoomMenuListeners() {
+    rooms.forEach((_, roomId) => {
+        attachMenuLastMessageListener(roomId);
+    });
+}
+
+function updateRoomMessageIndicators(roomId) {
+    if (!rooms.has(roomId)) return;
+    if (!menuLastMsgListeners.has(roomId)) {
+        attachMenuLastMessageListener(roomId);
+    }
 }
             // Функции для управления меню
             function openSidebar() {
@@ -2201,7 +2288,7 @@ async function checkAllRoomsSize() {
             }
 
             function deleteRoom(roomId) {
-
+detachMenuLastMessageListener(roomId);
 
 
                   if (roomId) {
@@ -2336,13 +2423,7 @@ async function markMessagesAsDelivered(roomId) {
 }
 
 // Добавьте периодическое обновление индикаторов (каждые 5 секунд)
-setInterval(() => {
-   if (rooms.size > 0) {
-       rooms.forEach((_, roomId) => {
-           updateRoomMessageIndicators(roomId);
-        });
- }
-}, 4000);
+
 
             // Delete message
             async function deleteMessage(messageId) {
@@ -2534,14 +2615,14 @@ function addRoomToUI(roomId, keyBase64, name, lastMsg = '', lastTime = Date.now(
     roomsListEl.appendChild(roomEl);
     
     // Обновляем индикаторы для этой комнаты
-    setTimeout(() => updateRoomMessageIndicators(roomId), 100);
+    attachMenuLastMessageListener(roomId)
 }
 
 
 async function switchRoom(roomId) {
     const room = rooms.get(roomId);
     if (!room) return;
-    
+
     if (currentRoomId) {
         try {
             // Сохраняем состояние текущей комнаты
@@ -2552,22 +2633,22 @@ async function switchRoom(roomId) {
                     allLoaded: allMessagesLoaded
                 });
             }
-            
+
             await db.ref(`rooms/${currentRoomId}/presence/${userId}`).remove();
         } catch (error) {
             console.error('Error removing from previous room:', error);
         }
     }
-    
-    // Clean up old listeners
-    if (messagesRef) messagesRef.off();
+
+    // Снимаем слушатели открытой комнаты (menuLastMsgListeners оставляем активными для всех комнат)
+// Снимаем слушатели только открытой комнаты (menuLastMsgListeners оставляем активными для всех комнат)
+    detachCurrentMessagesListener();
     if (peerPresenceRef) peerPresenceRef.off();
     if (roomPresenceRef) roomPresenceRef.off();
-    if (currentMessagesListener) currentMessagesListener();
 
     currentRoomId = roomId;
     cryptoKey = await importKey(room.keyBase64);
-    
+
     // Восстанавливаем состояние для новой комнаты или создаём новое
     const savedState = roomsState.get(roomId);
     if (savedState) {
@@ -2579,14 +2660,14 @@ async function switchRoom(roomId) {
         hasMoreMessages = true;
         allMessagesLoaded = false;
     }
-    
-    // Удаляем старую кнопку
+
+    // Удаляем старую кнопку пагинации
     if (loadMoreButton) {
         loadMoreButton.remove();
         loadMoreButton = null;
     }
 
-    // Update UI
+    // Обновляем активный класс в списке комнат
     document.querySelectorAll('.room-item').forEach(el => {
         el.classList.toggle('active', el.dataset.roomId === roomId);
     });
@@ -2598,24 +2679,28 @@ async function switchRoom(roomId) {
 
     messagesContainer.innerHTML = '';
     cancelReply();
-    
-    // Load messages
+
+    // Загружаем сообщения
     try {
         await loadMessages(roomId, cryptoKey, false);
     } catch (error) {
         console.error('Error loading messages:', error);
     }
-    
-    // Setup real-time listeners
+
+    // Подключаем слушатели текущей комнаты
     setupMessagesListener(roomId, cryptoKey);
     setupRoomPresence(roomId);
 
-    // Update last accessed
+    // Обновляем время последнего входа
     const saved = loadSavedRooms();
     if (saved[roomId]) {
         saved[roomId].lastAccessed = Date.now();
         localStorage.setItem('e2ee_rooms', JSON.stringify(saved));
     }
+
+    // Гарантируем, что слушатели индикаторов в меню висят на всех комнатах
+    ensureAllRoomMenuListeners();
+   
 }
     
     
@@ -2779,100 +2864,87 @@ async function loadMessages(roomId, key, loadMore = false) {
 }
 
 function setupMessagesListener(roomId, key) {
+    detachCurrentMessagesListener();
     messagesRef = db.ref(`rooms/${roomId}/messages`);
-    
-    if (currentMessagesListener) {
-        messagesRef.off('child_added', currentMessagesListener);
-    }
-    
-    // Слушаем новые сообщения
-// В функции setupMessagesListener, внутри обработчика child_added
-// Замените addMessageToUI на добавление в конец, если сообщение новое
-currentMessagesListener = messagesRef.on('child_added', async (snapshot) => {
-    if (!snapshot || !snapshot.exists()) return;
-    
-    const msg = snapshot.val();
-    if (!msg || !msg.data || msg.deleted) return;
-    
-    // Проверяем, не загружено ли уже это сообщение
-    const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
-    if (existingMessage) return;
-    
-    const isOwn = msg.from === userId;
-    const decrypted = await decryptMessage(msg.data, key);
-    
-    // Если это новое сообщение (timestamp больше последнего загруженного)
-    // добавляем в конец
-    if (!currentLastTimestamp || msg.ts > currentLastTimestamp) {
-        addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from, msg);
-    } else {
-        // Если старое сообщение (из истории) - не добавляем
-        return;
-    }
-    
-    // Остальная логика...
-    if (!isOwn && !msg.delivered) {
-        const updates = {};
-        updates[`rooms/${roomId}/messages/${snapshot.key}/delivered`] = true;
-        await db.ref().update(updates);
-    }
-    
-    updateRoomMessageIndicators(roomId);
-    
-    // Обновляем последнее сообщение в списке комнат
-    const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"] .room-last-message`);
-    const roomTime = document.querySelector(`.room-item[data-room-id="${roomId}"] .room-time`);
-    if (roomItem) {
-        roomItem.textContent = decrypted.substring(0, 30) + (decrypted.length > 30 ? '...' : '');
-    }
-    if (roomTime) {
-        roomTime.textContent = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
 
+    messagesAddedHandler = async (snapshot) => {
+        if (!snapshot || !snapshot.exists()) return;
 
-            setTimeout(() => {
+        const msg = snapshot.val();
+        if (!msg || !msg.data || msg.deleted) return;
+
+        const existingMessage = document.querySelector(`[data-message-id="${snapshot.key}"]`);
+        if (existingMessage) return;
+
+        const isOwn = msg.from === userId;
+        const decrypted = await decryptMessage(msg.data, key);
+
+        if (!currentLastTimestamp || msg.ts > currentLastTimestamp) {
+            addMessageToUI(decrypted, isOwn, msg.ts, msg.delivered || false, snapshot.key, msg.from, msg);
+        } else {
+            return;
+        }
+
+        if (!isOwn && !msg.delivered) {
+            const updates = {};
+            updates[`rooms/${roomId}/messages/${snapshot.key}/delivered`] = true;
+            await db.ref().update(updates);
+        }
+
+        updateRoomMessageIndicators(roomId);
+
+        const roomItem = document.querySelector(`.room-item[data-room-id="${roomId}"] .room-last-message`);
+        const roomTime = document.querySelector(`.room-item[data-room-id="${roomId}"] .room-time`);
+        if (roomItem) {
+            roomItem.textContent = decrypted.substring(0, 30) + (decrypted.length > 30 ? '...' : '');
+        }
+        if (roomTime) {
+            roomTime.textContent = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        setTimeout(() => {
             checkAndShowLoadMoreButton();
         }, 100);
 
-    if (loadMoreButton && messagesContainer.scrollTop > 100) {
-    loadMoreButton.style.display = 'none';
-}
-});
-    
-    // Слушаем изменения сообщений
-    messagesRef.on('child_changed', (snapshot) => {
+        if (loadMoreButton && messagesContainer.scrollTop > 100) {
+            loadMoreButton.style.display = 'none';
+        }
+    };
+
+    messagesChangedHandler = (snapshot) => {
         if (!snapshot || !snapshot.exists()) return;
-        
+
         const msg = snapshot.val();
-        
-        // Обновляем индикаторы при любых изменениях
+
         updateRoomMessageIndicators(roomId);
-        
-        // Обновляем статус доставки если изменился
+
         if (msg && msg.delivered === true) {
             const messageElement = document.querySelector(`[data-message-id="${snapshot.key}"]`);
             if (messageElement) {
                 const statusBadge = messageElement.querySelector('.delivery-status-badge');
                 if (statusBadge) {
                     statusBadge.innerHTML = ' <i class="fas fa-check-circle delivered" title="Доставлено"></i>';
-                   
                 }
             }
         }
-        
-        // Обработка удаления
+
         if (msg && msg.deleted) {
             const messageElement = document.querySelector(`[data-message-id="${snapshot.key}"]`);
             if (messageElement) {
                 messageElement.closest('.message-wrapper').remove();
             }
         }
-    });
-    
-    // Также слушаем удаление сообщений
-    messagesRef.on('child_removed', () => {
+    };
+
+    messagesRemovedHandler = () => {
         updateRoomMessageIndicators(roomId);
-    });
+    };
+
+    currentMessagesListener = messagesAddedHandler;
+
+    messagesRef.on('child_added', messagesAddedHandler);
+    messagesRef.on('child_changed', messagesChangedHandler);
+    messagesRef.on('child_removed', messagesRemovedHandler);
 }
 
 // ========== ФУНКЦИЯ СОЗДАНИЯ ЭЛЕМЕНТА СООБЩЕНИЯ ==========
@@ -3536,6 +3608,8 @@ async function initialize() {
 }
 
 setupScrollHandler();
+
+ensureAllRoomMenuListeners()
 }
             initialize();
 
@@ -3556,8 +3630,12 @@ setupScrollHandler();
                     if (connectedRef) connectedRef.off();
                     if (globalPresenceRef) globalPresenceRef.off();
                     if (roomPresenceRef) roomPresenceRef.off();
-                    if (messagesRef) messagesRef.off();
-                    
+                    detachCurrentMessagesListener();
+                    menuLastMsgListeners.forEach((_, roomId) => {
+    detachMenuLastMessageListener(roomId);
+});
+
+
                     // Удаляем обработчики свайпа
                     document.removeEventListener('touchstart', handleTouchStart);
                     document.removeEventListener('touchmove', handleTouchMove);
